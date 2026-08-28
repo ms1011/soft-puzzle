@@ -200,6 +200,46 @@ describe('startServer', () => {
     }
   });
 
+  it(
+    '닉네임 앞뒤 공백이 trim되어 정규화되고, 소켓이 그 정규화된 키로 바인딩된다 ' +
+      '(canonical = raw.nickname으로 되돌리면 이 테스트의 두 번째 절반에서 잡힌다)',
+    async () => {
+      const room = makeRoom({ host: '철수' });
+      let server: RunningServer | undefined;
+      const clients: TestClient[] = [];
+      try {
+        server = await startServer(room, 0);
+
+        const host = new TestClient(server.port);
+        clients.push(host);
+        await new Promise<void>((resolve, reject) => {
+          host.socket.once('connect', () => resolve());
+          host.socket.once('error', reject);
+        });
+        host.send({ type: 'join', nickname: '  철수  ' });
+        const joined = asJoined(await host.next('joined'));
+        expect(joined.you).toBe('철수');
+
+        // host 자신의 최초 lobby state — join() 처리 중 버퍼링됐다가 flush된 것.
+        await host.waitForPhase('lobby');
+
+        // 두 번째 클라이언트가 들어오면 room.onSend('철수', ...)가 호출된다 — Room은 항상
+        // 정규화된 키('철수')로 부르므로, 소켓 맵이 raw 문자열('  철수  ')로 등록돼 있었다면
+        // (naive echo 구현) 이 조회가 실패해 host는 이 브로드캐스트를 영영 받지 못하고
+        // 아래 waitForPhase가 타임아웃난다. 이게 join.you 값만 확인해서는 못 잡는, 실제로
+        // 중요한 절반이다.
+        const guest = await connectAndJoin(server.port, '영희');
+        clients.push(guest);
+
+        const afterGuestJoin = await host.waitForPhase('lobby');
+        expect(afterGuestJoin.room.players).toEqual(['철수', '영희']);
+      } finally {
+        for (const c of clients) c.destroy();
+        if (server) await server.close();
+      }
+    },
+  );
+
   it('② 원카드: 상대에게 보낸 어떤 메시지에도(이벤트 포함) 내 손패 카드가 등장하지 않는다', async () => {
     const room = makeRoom({ game: 'onecard', host: '철수' });
     let server: RunningServer | undefined;
@@ -313,8 +353,12 @@ describe('startServer', () => {
     const occupied = net.createServer();
     let server: RunningServer | undefined;
     try {
+      // startServer는 LAN 접속을 받아야 하므로 loopback이 아니라 와일드카드 주소에
+      // 바인딩한다(아래 tryListen 참고). 같은 포트를 와일드카드로 선점해야 실제로 충돌해서
+      // EADDRINUSE가 난다 — 127.0.0.1에만 걸어두면 와일드카드 바인딩과 겹치지 않아(이
+      // 플랫폼에서 실측 확인됨) 재시도 경로 자체가 조용히 발동하지 않는다.
       const occupiedPort = await new Promise<number>((resolve) => {
-        occupied.listen(0, '127.0.0.1', () => {
+        occupied.listen(0, () => {
           resolve((occupied.address() as net.AddressInfo).port);
         });
       });

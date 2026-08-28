@@ -128,7 +128,13 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
         const canonical = buffered[0]?.nickname;
         if (canonical === undefined) {
           // 도달 불가능해야 정상이다(성공한 join()은 반드시 broadcastState()로 이 소켓 몫의
-          // state를 최소 한 번 버퍼에 남긴다) — 그래도 크래시 대신 방어적으로 처리한다.
+          // state를 최소 한 번 버퍼에 남긴다) — 그래도 만에 하나 발생하면, room.join()은 이미
+          // 성공해 이 플레이어를 room.players에 넣어버린 뒤다. 여기서 그냥 socket.end()만
+          // 하면 이 플레이어는 소켓도 없이 room.players에 영원히 남아 유령이 되고, 그 뒤로
+          // 들어오는 모든 사람의 buffered[0]이 이 유령의 닉네임이 되어 엉뚱하게 묶인다 —
+          // crash보다 조용히 더 나쁘다. room.leave로 확실히 되돌린다(leave는 trim하므로
+          // 원본 문자열을 그대로 넘겨도 안전하다).
+          room.leave(raw.nickname);
           sendError('bad-msg', '입장 처리 중 내부 오류가 발생했습니다.');
           socket.end();
           return;
@@ -171,7 +177,12 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
     let port = preferredPort;
 
     const onListenError = (err: NodeJS.ErrnoException): void => {
-      if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_RETRIES) {
+      // port는 여기서 다음 시도값으로 쓰인다 — 65535(TCP 포트 최댓값)를 넘어서면
+      // server.listen(65536)이 ERR_SOCKET_BAD_PORT를 "이 error 핸들러 안에서 동기적으로"
+      // 던진다. 이 핸들러는 EventEmitter가 부르는 콜백이라 그 throw는 프로미스 reject가 아닌
+      // uncaughtException이 된다 — 그 경계를 넘기 전에 멈추고 원래 EADDRINUSE로 깔끔하게
+      // reject한다.
+      if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_RETRIES && port < 65535) {
         attempt++;
         port++;
         tryListen();
@@ -182,11 +193,18 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
 
     const tryListen = (): void => {
       server.once('error', onListenError);
-      server.listen(port, '127.0.0.1', () => {
+      // 호스트를 지정하지 않고 listen하면 Node가 와일드카드 주소(가능하면 IPv6 '::', 아니면
+      // IPv4 '0.0.0.0')에 바인딩한다 — 이 게임은 LAN 멀티플레이어이므로 loopback(127.0.0.1)
+      // 에만 묶으면 같은 서브넷의 다른 기기는 전부 ECONNREFUSED를 받는다. 루프백 접속(테스트가
+      // 쓰는 127.0.0.1 연결 포함)은 와일드카드 바인딩에도 여전히 된다.
+      server.listen(port, () => {
         server.removeListener('error', onListenError);
-        // 바인딩 이후의 서버 레벨 에러(예: accept 중 EMFILE)로 인해 리스너 없는 'error'가
-        // 프로세스를 죽이지 않도록 — 이 시점부터는 재시도 대상이 아니므로 조용히 삼킨다.
-        server.on('error', () => {});
+        // 바인딩 이후의 서버 레벨 에러(예: accept 중 EMFILE)로 프로세스가 죽지 않도록 —
+        // 이 시점부터는 재시도 대상이 아니다. 그렇다고 조용히 삼키면 운영 중 장애가 아무
+        // 흔적도 안 남으므로 최소한 stderr에는 남긴다.
+        server.on('error', (err) => {
+          console.error('[card-night] TCP 서버 에러:', err);
+        });
         const addr = server.address();
         const boundPort = addr && typeof addr === 'object' ? addr.port : port;
         resolve(makeRunningServer(boundPort));

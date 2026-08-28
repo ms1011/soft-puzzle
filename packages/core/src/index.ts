@@ -18,3 +18,6 @@ export { encodeMsg, NdjsonDecoder } from './ndjson.js';
 export type { EngineEvent, EngineAction, GameEngine } from './engine.js';
 
 export { handValue, BlackjackEngine } from './games/blackjack.js';
+
+export type { YachtCategory } from './games/yacht.js';
+export { scoreCategory, YachtEngine } from './games/yacht.js';

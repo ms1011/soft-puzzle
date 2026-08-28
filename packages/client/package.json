@@ -7,7 +7,14 @@
   },
   "dependencies": {
     "@card-night/core": "*",
-    "@card-night/server": "*"
+    "@card-night/server": "*",
+    "ink": "^5",
+    "react": "^18",
+    "ink-text-input": "^6"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4",
+    "@types/react": "^18"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests"

@@ -18,7 +18,7 @@ export interface RoomOpts {
   now?: () => number;
 }
 
-type Phase = 'lobby' | 'playing' | 'result';
+export type Phase = 'lobby' | 'playing' | 'result';
 
 /** Room이 아는 유일한 game-id 분기점 — 새 엔진 인스턴스를 만드는 것 말고는 게임을 몰라야 한다. */
 const ENGINE_FACTORIES: Record<GameId, () => GameEngine> = {
@@ -64,7 +64,9 @@ export class Room {
     this.sendCb = cb;
   }
 
-  join(nickname: string): { ok: true } | { ok: false; code: 'full' | 'dup' | 'playing' } {
+  join(
+    nickname: string,
+  ): { ok: true } | { ok: false; code: 'full' | 'dup' | 'playing'; phase?: Phase } {
     // 닉네임도 네트워크에서 오는 값이므로 신뢰하지 않는다: 앞뒤 공백을 정리하고, 빈 문자열이나
     // 공백만으로 된 닉네임, 너무 긴 닉네임을 거부한다. 이건 단순히 표시 버그 방지 이상의 의미가
     // 있다 — 빈 문자열이 실제로 players에 들어갈 수 있다면 host 공석 판정에 쓰는 값과 실제
@@ -73,7 +75,12 @@ export class Room {
     // 의미로 가장 가깝다.
     const nick = nickname.trim();
     if (nick.length === 0 || nick.length > MAX_NICKNAME_LENGTH) return { ok: false, code: 'dup' };
-    if (this.phase !== 'lobby') return { ok: false, code: 'playing' };
+    // code는 여전히 'playing' 하나뿐이다(와이어 프로토콜의 error.code enum이 core에 고정돼
+    // 있어 여기서 새 코드를 만들 수 없다) — 대신 실제 phase를 함께 실어 보내, toLobby가
+    // 생긴 지금은 이 거절이 "result 화면(스코어보드)이 떠 있는 방"에서도 흔히 일어난다는
+    // 걸 server.ts가 구분해 다른 문구를 고를 수 있게 한다. phase는 와이어로 직렬화되는
+    // ServerMsg가 아니라 room.ts↔server.ts 사이의 내부 신호일 뿐이다.
+    if (this.phase !== 'lobby') return { ok: false, code: 'playing', phase: this.phase };
     if (this.players.includes(nick)) return { ok: false, code: 'dup' };
     if (this.players.length >= MAX_PLAYERS) return { ok: false, code: 'full' };
 
@@ -260,6 +267,16 @@ export class Room {
       return;
     }
     const engine = ENGINE_FACTORIES[this.game]();
+    // tryStart와 동일한 guard(중요사항 4) — 없으면 게임 도중 이탈로 인원이 minPlayers 밑으로
+    // 줄어든 채 result에 도착한 방에서, host의 반사적인 replay가 엔진의 명시된 계약(예:
+    // 블랙잭 minPlayers=2)을 어기는 솔로 게임을 조용히 새로 시작해버린다.
+    if (this.players.length < engine.minPlayers) {
+      this.send(nickname, {
+        type: 'event',
+        text: `최소 ${engine.minPlayers}명이 있어야 시작할 수 있습니다.`,
+      });
+      return;
+    }
     this.engine = engine;
     // nickname === this.host는 위 guard에서 이미 확인됐다 — 이유는 tryStart와 동일하다.
     this.engine.start([...this.players], nickname, this.rng);

@@ -5,6 +5,11 @@ import type { Room } from './room.js';
 
 export interface RunningServer {
   port: number;
+  /** 실제로 바인딩된 로컬 주소 문자열(예: '0.0.0.0' 또는 '::'). tryListen이 호스트를 지정하지
+   * 않고 listen해 와일드카드에 묶인다는 사실은 이 게임에서 가장 결정적인 설정이라(중요사항
+   * 5 — 예전에 실제로 127.0.0.1로 묶인 채 나간 적이 있다), 테스트가 추측이 아니라 이 값을 직접
+   * 확인할 수 있도록 내보낸다. */
+  address: string;
   close(): Promise<void>;
 }
 
@@ -28,15 +33,23 @@ function isJoinMsg(raw: unknown): raw is { type: 'join'; nickname: string } {
  * 초과)"을 모두 같은 코드로 뭉뚱그려 보고한다(join()의 반환 타입이 'full'|'dup'|'playing'으로
  * 고정돼 있어 새 코드를 추가할 수 없다). 그래서 여기서 "이미 사용 중입니다"라고 단정하면 형식
  * 오류로 거절된 사람에게 거짓 이유를 말하게 된다 — 두 원인을 모두 정직하게 포괄하는 문구를 쓴다.
+ *
+ * 'playing' 코드는 phase가 'playing'뿐 아니라 'result'(스코어보드가 떠 있는 방)일 때도
+ * 돌아온다(room.ts의 join() 참고 — code enum 자체는 늘릴 수 없어 phase를 별도로 실어 보낸다).
+ * toLobby가 생기기 전에는 이 방이 로비로 돌아올 길이 없어 "게임이 이미 진행 중"이라는 문구를
+ * 보게 될 일이 사실상 없었지만, 이제는 흔한 실제 경로다 — 게임 중이라고 오해하게 두지 않고
+ * result 전용 문구를 쓴다.
  */
-function errorMessageFor(code: 'full' | 'dup' | 'playing'): string {
+function errorMessageFor(code: 'full' | 'dup' | 'playing', phase?: 'lobby' | 'playing' | 'result'): string {
   switch (code) {
     case 'full':
       return '방이 가득 찼습니다.';
     case 'dup':
       return '사용할 수 없는 닉네임입니다 — 이미 사용 중이거나 형식이 올바르지 않습니다.';
     case 'playing':
-      return '게임이 이미 진행 중이라 입장할 수 없습니다.';
+      return phase === 'result'
+        ? '게임이 끝나고 결과를 보는 중입니다. 방장이 로비로 돌아가면 입장할 수 있습니다.'
+        : '게임이 이미 진행 중이라 입장할 수 없습니다.';
   }
 }
 
@@ -121,7 +134,7 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
         pendingJoinBuffer = null;
 
         if (!result.ok) {
-          sendError(result.code, errorMessageFor(result.code));
+          sendError(result.code, errorMessageFor(result.code, result.phase));
           socket.end();
           return;
         }
@@ -207,17 +220,19 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
         });
         const addr = server.address();
         const boundPort = addr && typeof addr === 'object' ? addr.port : port;
-        resolve(makeRunningServer(boundPort));
+        const boundAddress = addr && typeof addr === 'object' ? addr.address : '0.0.0.0';
+        resolve(makeRunningServer(boundPort, boundAddress));
       });
     };
 
-    const makeRunningServer = (boundPort: number): RunningServer => {
+    const makeRunningServer = (boundPort: number, boundAddress: string): RunningServer => {
       const timer = setInterval(() => room.checkTimeout(), 1000);
       timer.unref();
       let closed = false;
 
       return {
         port: boundPort,
+        address: boundAddress,
         close(): Promise<void> {
           if (closed) return Promise.resolve();
           closed = true;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { dedupeRooms, parseHostPort } from '../src/ui/roomListUtils.js';
+import { dedupeRooms, parseHostPort, resolveRoomTarget } from '../src/ui/roomListUtils.js';
+import { DEFAULT_TCP_PORT } from '@card-night/core';
 import type { RoomInfo } from '@card-night/core';
 
 function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
@@ -60,5 +61,22 @@ describe('parseHostPort', () => {
 
   it('앞뒤 공백은 무시한다', () => {
     expect(parseHostPort('  192.168.0.5:7420  ')).toEqual({ host: '192.168.0.5', port: 7420 });
+  });
+});
+
+describe('resolveRoomTarget (중요사항 1)', () => {
+  it('non-default 포트로 광고된 방은 광고된 그 포트로 접속한다', () => {
+    const info = room({ addr: '192.168.0.5:7421' });
+    expect(resolveRoomTarget(info)).toEqual({ host: '192.168.0.5', port: 7421 });
+  });
+
+  it('DEFAULT_TCP_PORT로 광고된 방도 그 포트를 그대로 쓴다(하드코딩 폴백이 아니라 광고값)', () => {
+    const info = room({ addr: `192.168.0.5:${DEFAULT_TCP_PORT}` });
+    expect(resolveRoomTarget(info)).toEqual({ host: '192.168.0.5', port: DEFAULT_TCP_PORT });
+  });
+
+  it('addr에 포트가 없는(콜론이 없는) 옛 응답기 형식은 DEFAULT_TCP_PORT로 폴백한다', () => {
+    const info = room({ addr: '192.168.0.5' });
+    expect(resolveRoomTarget(info)).toEqual({ host: '192.168.0.5', port: DEFAULT_TCP_PORT });
   });
 });

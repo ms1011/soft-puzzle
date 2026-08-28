@@ -1,9 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
+import type { RoomInfo } from '@card-night/core';
 import { Nickname } from '../src/ui/screens/Nickname.js';
 import { Lobby } from '../src/ui/screens/Lobby.js';
 import { Result } from '../src/ui/screens/Result.js';
+import { RoomList } from '../src/ui/screens/RoomList.js';
 import { ActionBar } from '../src/ui/game/ActionBar.js';
 
 /** ink는 keypress를 batchedUpdates 안에서 동기적으로 처리하지만, 여러 stdin.write를
@@ -11,6 +13,9 @@ import { ActionBar } from '../src/ui/game/ActionBar.js';
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20));
 }
+
+const ESC = '\x1B';
+const DOWN_ARROW = `${ESC}[B`;
 
 describe('Nickname 화면', () => {
   it('입력 후 Enter를 누르면 onSubmit이 입력값으로 호출된다', async () => {
@@ -105,7 +110,13 @@ describe('Result 화면', () => {
       { nickname: '민수', detail: '15점' },
     ];
     const { lastFrame, unmount } = render(
-      <Result ranking={ranking} youAreHost={false} onReplay={() => {}} onLeave={() => {}} />,
+      <Result
+        ranking={ranking}
+        youAreHost={false}
+        onReplay={() => {}}
+        onLeave={() => {}}
+        onToLobby={() => {}}
+      />,
     );
     const frame = lastFrame() ?? '';
 
@@ -120,11 +131,171 @@ describe('Result 화면', () => {
 
   it('방장이 아니면 [r]/[q] 안내 대신 대기 문구를 보여준다', () => {
     const { lastFrame, unmount } = render(
-      <Result ranking={[{ nickname: '철수', detail: '1위' }]} youAreHost={false} onReplay={() => {}} onLeave={() => {}} />,
+      <Result
+        ranking={[{ nickname: '철수', detail: '1위' }]}
+        youAreHost={false}
+        onReplay={() => {}}
+        onLeave={() => {}}
+        onToLobby={() => {}}
+      />,
     );
     const frame = lastFrame() ?? '';
     expect(frame).not.toContain('[r]');
     expect(frame).toContain('기다리는');
+    unmount();
+  });
+
+  it('방장이 Result에서 [l]을 누르면 onToLobby가 호출된다(중요사항 2 — 로비 복귀의 유일한 진입점)', async () => {
+    const onToLobby = vi.fn();
+    const { stdin, unmount } = render(
+      <Result
+        ranking={[{ nickname: '철수', detail: '1위' }]}
+        youAreHost={true}
+        onReplay={() => {}}
+        onLeave={() => {}}
+        onToLobby={onToLobby}
+      />,
+    );
+    await tick();
+    stdin.write('l');
+    await tick();
+    expect(onToLobby).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('방장이 아니면 [l]을 눌러도 onToLobby가 호출되지 않는다', async () => {
+    const onToLobby = vi.fn();
+    const { stdin, unmount } = render(
+      <Result
+        ranking={[{ nickname: '철수', detail: '1위' }]}
+        youAreHost={false}
+        onReplay={() => {}}
+        onLeave={() => {}}
+        onToLobby={onToLobby}
+      />,
+    );
+    await tick();
+    stdin.write('l');
+    await tick();
+    expect(onToLobby).not.toHaveBeenCalled();
+    unmount();
+  });
+});
+
+describe('RoomList 화면 (치명적 결함, 중요사항 3)', () => {
+  function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
+    return { room: '테스트 방', game: 'blackjack', players: '1/6', addr: '192.168.0.5:7420', ...overrides };
+  }
+
+  it('rooms가 새로고침으로 줄어들면 커서가 새 목록 범위 안으로 클램프된다', async () => {
+    const rooms = [room({ room: '방A' }), room({ room: '방B' })];
+    const onSelect = vi.fn();
+    const { stdin, rerender, lastFrame, unmount } = render(
+      <RoomList
+        rooms={rooms}
+        scanning={false}
+        connecting={false}
+        onRefresh={() => {}}
+        onSelect={onSelect}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick();
+    stdin.write('[B'); // 아래 방향키 — 커서를 두 번째 방(index 1)로.
+    await tick();
+    expect(lastFrame() ?? '').toMatch(/> .*방B/);
+
+    // 새로고침으로 목록이 한 개로 줄었다고 가정 — 커서(1)가 범위 밖이 된다.
+    rerender(
+      <RoomList
+        rooms={[room({ room: '방A' })]}
+        scanning={false}
+        connecting={false}
+        onRefresh={() => {}}
+        onSelect={onSelect}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick();
+
+    stdin.write('\r');
+    await tick();
+
+    // 클램프되지 않았다면 onSelect(undefined)가 호출되며(수정 전 버그) 앱이 죽는다.
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(room({ room: '방A' }));
+    unmount();
+  });
+
+  it('rooms가 여러 번 급격히 줄어드는 동안에도 onSelect가 절대 undefined로 호출되지 않는다', async () => {
+    // 커서를 목록 끝(index 2)까지 옮긴 뒤 rooms를 1개로 확 줄인다 — effect 클램프가 selected를
+    // 정리해야 정상이고, 혹시 그 effect가 어떤 경로로든 못 따라잡더라도 Enter 핸들러 자체의
+    // rooms[selected] 가드(치명적 결함 수정의 두 번째 방어선)가 undefined 전달을 막아야 한다.
+    const onSelect = vi.fn();
+    const rooms = [room({ room: '방A' }), room({ room: '방B' }), room({ room: '방C' })];
+    const { stdin, rerender, unmount } = render(
+      <RoomList
+        rooms={rooms}
+        scanning={false}
+        connecting={false}
+        onRefresh={() => {}}
+        onSelect={onSelect}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick();
+    stdin.write('[B');
+    stdin.write('[B'); // 커서를 마지막(index 2, 방C)으로.
+    await tick();
+
+    rerender(
+      <RoomList
+        rooms={[room({ room: '방A' })]}
+        scanning={false}
+        connecting={false}
+        onRefresh={() => {}}
+        onSelect={onSelect}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick();
+    stdin.write('\r');
+    await tick();
+
+    for (const call of onSelect.mock.calls) {
+      expect(call[0]).not.toBeUndefined();
+    }
+    unmount();
+  });
+
+  it('connecting이 true면 "연결 중..." 안내를 보여주고 Enter를 포함한 모든 입력을 무시한다', async () => {
+    const onSelect = vi.fn();
+    const onRefresh = vi.fn();
+    const rooms = [room()];
+    const { stdin, lastFrame, unmount } = render(
+      <RoomList
+        rooms={rooms}
+        scanning={false}
+        connecting={true}
+        onRefresh={onRefresh}
+        onSelect={onSelect}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick();
+    expect(lastFrame() ?? '').toContain('연결 중...');
+
+    stdin.write('\r');
+    stdin.write('r');
+    await tick();
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onRefresh).not.toHaveBeenCalled();
     unmount();
   });
 });

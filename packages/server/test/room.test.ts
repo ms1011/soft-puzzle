@@ -133,13 +133,28 @@ describe('Room — lobby', () => {
     expect(room.join('철수')).toEqual({ ok: false, code: 'dup' });
   });
 
-  it('게임이 시작된 뒤 join은 {ok:false, code:"playing"}', () => {
+  it('게임이 시작된 뒤 join은 {ok:false, code:"playing", phase:"playing"}', () => {
     const { room } = setup();
     room.join('철수');
     room.join('영희');
     room.handleMessage('철수', { type: 'action', name: 'start' });
-    expect(room.join('민수')).toEqual({ ok: false, code: 'playing' });
+    expect(room.join('민수')).toEqual({ ok: false, code: 'playing', phase: 'playing' });
   });
+
+  it(
+    'result 화면(스코어보드)이 떠 있는 동안의 join도 여전히 code:"playing"이지만 ' +
+      'phase:"result"를 함께 실어 보낸다(중요사항 2 — server.ts가 이걸로 문구를 구분한다)',
+    () => {
+      const { room } = setup();
+      room.join('철수');
+      room.join('영희');
+      room.handleMessage('철수', { type: 'action', name: 'start' });
+      advanceToSettle(room, ['철수', '영희'], [100, 50]);
+      room.handleMessage('철수', { type: 'action', name: 'endGame' });
+
+      expect(room.join('민수')).toEqual({ ok: false, code: 'playing', phase: 'result' });
+    },
+  );
 
   it('④ host가 아닌 사람의 start는 무시되고, 그 사람에게만 사유가 안내된다', () => {
     const { room, sent } = setup();
@@ -368,32 +383,39 @@ describe('Room — info()', () => {
 });
 
 describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아야 한다)', () => {
-  it('host가 게임 중 이탈하면 가장 오래 남아있는 플레이어가 새 host가 되고, 그 사람의 replay가 허용된다', () => {
-    const { room, sent } = setup();
-    room.join('철수'); // host
-    room.join('영희');
-    room.handleMessage('철수', { type: 'action', name: 'start' });
-    advanceToSettle(room, ['철수', '영희'], [100, 50]);
-    expect((lastState(sent['영희']).view as any).phase).toBe('settle');
+  it(
+    'host가 게임 중 이탈하면 가장 오래 남아있는 플레이어가 새 host가 되지만, ' +
+      '혼자 남았다면 그 사람의 replay는 minPlayers 미달로 막힌다(중요사항 4)',
+    () => {
+      const { room, sent } = setup();
+      room.join('철수'); // host
+      room.join('영희');
+      room.handleMessage('철수', { type: 'action', name: 'start' });
+      advanceToSettle(room, ['철수', '영희'], [100, 50]);
+      expect((lastState(sent['영희']).view as any).phase).toBe('settle');
 
-    // host(철수)가 이탈 — 2명 중 1명만 남으므로 블랙잭 엔진이 스스로 게임을 종료 처리한다.
-    room.leave('철수');
+      // host(철수)가 이탈 — 2명 중 1명만 남으므로 블랙잭 엔진이 스스로 게임을 종료 처리한다.
+      room.leave('철수');
 
-    const evs = events(sent['영희']).map((e) => e.text);
-    expect(evs.some((t) => t.includes('철수') && t.includes('떠났습니다'))).toBe(true);
-    expect(evs.some((t) => t.includes('영희') && t.includes('방장'))).toBe(true);
+      const evs = events(sent['영희']).map((e) => e.text);
+      expect(evs.some((t) => t.includes('철수') && t.includes('떠났습니다'))).toBe(true);
+      expect(evs.some((t) => t.includes('영희') && t.includes('방장'))).toBe(true);
 
-    const state = lastState(sent['영희']);
-    expect(state.room.host).toBe('영희');
-    expect(state.room.players).toEqual(['영희']);
-    expect(state.phase).toBe('result');
+      const state = lastState(sent['영희']);
+      expect(state.room.host).toBe('영희');
+      expect(state.room.players).toEqual(['영희']);
+      expect(state.phase).toBe('result');
 
-    // 새 host(영희)의 replay가 정상적으로 받아들여진다.
-    room.handleMessage('영희', { type: 'action', name: 'replay' });
-    const replayed = lastState(sent['영희']);
-    expect(replayed.phase).toBe('playing');
-    expect(replayed.room.host).toBe('영희');
-  });
+      // 새 host(영희)는 혼자다 — replay가 tryStart와 같은 minPlayers guard에 막혀야 한다
+      // (예전에는 여기서 솔로 블랙잭이 조용히 새로 시작됐다 — 리뷰에서 발견된 결함).
+      const beforeCount = (sent['영희'] ?? []).length;
+      room.handleMessage('영희', { type: 'action', name: 'replay' });
+      const afterEvs = events(sent['영희']).map((e) => e.text);
+      expect(afterEvs[afterEvs.length - 1]).toContain('최소');
+      expect((sent['영희'] ?? []).length).toBe(beforeCount + 1); // event 하나만 추가되고 state는 안 나간다
+      expect(lastState(sent['영희']).phase).toBe('result'); // 여전히 result에 머문다
+    },
+  );
 
   it('host가 자신의 턴 도중 이탈해도 예외 없이 처리되고 게임이 스스로 종료된다', () => {
     const { room, sent } = setup();

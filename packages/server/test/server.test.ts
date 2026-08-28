@@ -349,6 +349,20 @@ describe('startServer', () => {
     }
   });
 
+  it(
+    'LAN 접속을 받을 수 있도록 loopback이 아니라 와일드카드 주소(0.0.0.0 또는 ::)에 바인딩한다 ' +
+      '(중요사항 5 — 이 게임에서 가장 결정적인 설정이고, 한 번 127.0.0.1로 묶인 채 출시된 적이 있다)',
+    async () => {
+      const room = makeRoom();
+      const server = await startServer(room, 0);
+      try {
+        expect(['0.0.0.0', '::']).toContain(server.address);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   it('⑤ 포트가 이미 사용 중이면 +1 포트로 기동한다', async () => {
     const occupied = net.createServer();
     let server: RunningServer | undefined;

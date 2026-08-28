@@ -1,3 +1,4 @@
+import { DEFAULT_TCP_PORT } from '@card-night/core';
 import type { RoomInfo } from '@card-night/core';
 
 /** loopback(127.0.0.1)로 취급하는 주소. discoverRooms가 돌려주는 addr는 IPv4 문자열이다. */
@@ -49,4 +50,20 @@ export function parseHostPort(input: string): { host: string; port: number } | n
   const port = Number(portStr);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   return { host, port };
+}
+
+/**
+ * discoverRooms()가 돌려준 RoomInfo.addr를 실제 접속에 쓸 host/port로 바꾼다(중요사항 1).
+ *
+ * 방장 쪽(App.tsx)이 이제 항상 "ip:port" 형태로 addr를 광고하므로 보통은 parseHostPort가
+ * 곧바로 성공한다. 그래도 addr에 포트가 없는(콜론 자체가 없는) 옛 응답기 — 또는 앞으로 나올
+ * 확장 응답기 — 와의 호환을 위해, 포트를 못 뽑아낸 경우에만 DEFAULT_TCP_PORT로 폴백한다.
+ * "포트가 없다"와 "형식이 통째로 이상하다"를 구분하지 않는 이유: addr는 서버가 만든 신뢰
+ * 가능한 필드(사용자 자유 입력이 아님)라, 콜론이 없으면 십중팔구 그냥 옛 프로토콜의 IP뿐인
+ * addr다.
+ */
+export function resolveRoomTarget(room: RoomInfo): { host: string; port: number } {
+  const parsed = parseHostPort(room.addr);
+  if (parsed) return parsed;
+  return { host: room.addr, port: DEFAULT_TCP_PORT };
 }

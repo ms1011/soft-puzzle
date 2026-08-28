@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import os from 'node:os';
-import { DEFAULT_TCP_PORT } from '@card-night/core';
 import type { GameId, ServerMsg, RoomInfo } from '@card-night/core';
 import { Room, startServer, startDiscovery } from '@card-night/server';
 import type { RunningServer, RunningDiscovery } from '@card-night/server';
@@ -10,7 +9,7 @@ import { discoverRooms } from '../net/discover.js';
 import { loadConfig, saveConfig } from '../config.js';
 import type { Theme } from '../art/theme.js';
 import { GAME_LABELS, ACTION_LABELS } from './gameLabels.js';
-import { dedupeRooms } from './roomListUtils.js';
+import { dedupeRooms, resolveRoomTarget } from './roomListUtils.js';
 import { Nickname } from './screens/Nickname.js';
 import { MainMenu } from './screens/MainMenu.js';
 import { RoomList } from './screens/RoomList.js';
@@ -96,6 +95,10 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [scanning, setScanning] = useState(false);
+  // 중요사항 3: Connection.connect가 최대 5초 걸리는 동안(연결 성패가 갈리기 전) RoomList가
+  // 계속 입력을 받으면, 두 번째 Enter가 같은 닉네임으로 두 번째 연결을 열고 서버가 그걸
+  // 'dup'으로 거절해 방금 성공한 첫 연결까지 Nickname 화면으로 튕겨내며 고아로 만든다.
+  const [connecting, setConnecting] = useState(false);
   const [menuError, setMenuError] = useState<string | undefined>(undefined);
   const [roomListError, setRoomListError] = useState<string | undefined>(undefined);
   // 'dup' 거절(중복 또는 형식이 잘못된 닉네임)로 방 참가가 막혔을 때, 방 목록이 아니라
@@ -199,10 +202,21 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
         try {
           const server = await startServer(room);
           serverRef.current = server;
-          const discovery = await startDiscovery(() => room.info());
+          const ip = firstNonInternalIPv4();
+          setHostAddr(ip !== undefined ? `${ip}:${server.port}` : `?:${server.port}`);
+          // 중요사항 1: room.info()의 addr는 항상 ''다(Room은 자기 IP를 모른다) — 여기서
+          // server.port와 우리가 방금 구한 ip를 합쳐 "ip:port" 형태로 광고해야, UDP 응답기가
+          // 채워 넣는 폭(discovery.ts의 resolveRespondAddr)이나 클라이언트의 DEFAULT_TCP_PORT
+          // 하드코딩에 기대지 않고도 참가자가 실제로 서버가 열린 포트로 접속할 수 있다.
+          // ip를 못 구했으면(비내부 IPv4 인터페이스가 전혀 없는 극단적인 경우) addr를 그대로
+          // 비워, discovery.ts의 자체 폴백(응답기가 자신의 인터페이스 주소로 채움)이 예전처럼
+          // 동작하게 둔다 — 그 폴백은 포트를 모르므로 이 경우엔 여전히 DEFAULT_TCP_PORT 추정에
+          // 의존하게 되지만, 애초에 IP조차 못 구하는 상황 자체가 이 게임의 정상 사용 범위 밖이다.
+          const discovery = await startDiscovery(() => ({
+            ...room.info(),
+            addr: ip !== undefined ? `${ip}:${server.port}` : '',
+          }));
           discoveryRef.current = discovery;
-          const addr = firstNonInternalIPv4();
-          setHostAddr(addr !== undefined ? `${addr}:${server.port}` : `?:${server.port}`);
           await connectAndWire('127.0.0.1', server.port, nickname);
         } catch (err) {
           cleanupResources();
@@ -244,20 +258,29 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
 
   const handleSelectRoom = useCallback(
     (room: RoomInfo): void => {
+      if (connecting) return; // RoomList가 이미 입력을 막지만, 한 겹 더 방어한다(중요사항 3).
       setRoomListError(undefined);
-      // RoomInfo는 포트를 싣지 않는다(발견 프로토콜의 기존 제약) — 발견된 방은 언제나
-      // DEFAULT_TCP_PORT로 접속한다.
-      connectAndWire(room.addr, DEFAULT_TCP_PORT, nickname).catch(handleConnectError);
+      setConnecting(true);
+      // 중요사항 1: room.addr는 이제 "ip:port"로 광고된다 — resolveRoomTarget이 그걸 풀고,
+      // 포트가 없는(옛 응답기) addr만 DEFAULT_TCP_PORT로 폴백한다.
+      const { host, port } = resolveRoomTarget(room);
+      connectAndWire(host, port, nickname)
+        .catch(handleConnectError)
+        .finally(() => setConnecting(false));
     },
-    [connectAndWire, nickname, handleConnectError],
+    [connecting, connectAndWire, nickname, handleConnectError],
   );
 
   const handleManualConnect = useCallback(
     (host: string, port: number): void => {
+      if (connecting) return;
       setRoomListError(undefined);
-      connectAndWire(host, port, nickname).catch(handleConnectError);
+      setConnecting(true);
+      connectAndWire(host, port, nickname)
+        .catch(handleConnectError)
+        .finally(() => setConnecting(false));
     },
-    [connectAndWire, nickname, handleConnectError],
+    [connecting, connectAndWire, nickname, handleConnectError],
   );
 
   const handleQuit = useCallback((): void => {
@@ -271,6 +294,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
 
   const handleStart = useCallback((): void => sendAction('start'), [sendAction]);
   const handleReplay = useCallback((): void => sendAction('replay'), [sendAction]);
+  const handleToLobby = useCallback((): void => sendAction('toLobby'), [sendAction]);
 
   const returnToMenu = useCallback((): void => {
     cleanupResources();
@@ -297,6 +321,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
         <RoomList
           rooms={rooms}
           scanning={scanning}
+          connecting={connecting}
           error={roomListError}
           onRefresh={refreshRooms}
           onSelect={handleSelectRoom}
@@ -338,6 +363,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
               ranking={roomState.result.ranking}
               youAreHost={you === roomState.room.host}
               onReplay={handleReplay}
+              onToLobby={handleToLobby}
               onLeave={returnToMenu}
             />
           )}

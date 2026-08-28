@@ -14,11 +14,14 @@ export interface RoomListProps {
   onRefresh: () => void;
   onSelect: (room: RoomInfo) => void;
   onManualConnect: (host: string, port: number) => void;
+  /** Esc/q — 방을 찾지 못했거나 마음이 바뀐 사용자가 메인 메뉴로 돌아간다. */
+  onCancel: () => void;
 }
 
 /**
  * 방 목록 화면. 방향키로 목록을 고르고 Enter로 입장, r로 새로고침, i로 IP 직접 입력 모드로
- * 전환한다("192.168.0.5:7420" 형식). 목록이 비어 있으면 안내 문구를 보여준다.
+ * 전환한다("192.168.0.5:7420" 형식). 목록이 비어 있으면 안내 문구를 보여준다. Esc/q로 메인
+ * 메뉴로 돌아간다(수동 입력 모드에서는 Esc가 먼저 그 모드만 취소한다).
  */
 export function RoomList({
   rooms,
@@ -27,6 +30,7 @@ export function RoomList({
   onRefresh,
   onSelect,
   onManualConnect,
+  onCancel,
 }: RoomListProps): React.JSX.Element {
   const [selected, setSelected] = useState(0);
   const [manualMode, setManualMode] = useState(false);
@@ -50,6 +54,10 @@ export function RoomList({
       setManualMode(true);
       setManualValue('');
       setManualError(undefined);
+      return;
+    }
+    if (input === 'q' || key.escape) {
+      onCancel();
       return;
     }
     if (key.upArrow) {
@@ -102,7 +110,7 @@ export function RoomList({
       {error !== undefined && <Text color="red">{error}</Text>}
 
       {!manualMode && (
-        <Text dimColor>[r] 새로고침 [i] IP 직접 입력 [Enter] 입장</Text>
+        <Text dimColor>[r] 새로고침 [i] IP 직접 입력 [Enter] 입장 [q] 메뉴로</Text>
       )}
     </Box>
   );

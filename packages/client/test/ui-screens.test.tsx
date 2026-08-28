@@ -46,14 +46,7 @@ describe('Nickname 화면', () => {
 describe('Lobby 화면', () => {
   it('참가자 목록을 그리고, 호스트에게만 ★ 표시를 붙인다', () => {
     const { lastFrame, unmount } = render(
-      <Lobby
-        roomName="블랙잭방"
-        game="blackjack"
-        host="철수"
-        players={['철수', '영희']}
-        you="영희"
-        onStart={() => {}}
-      />,
+      <Lobby host="철수" players={['철수', '영희']} you="영희" onStart={() => {}} />,
     );
     const frame = lastFrame() ?? '';
     const lines = frame.split('\n');
@@ -73,7 +66,7 @@ describe('Lobby 화면', () => {
 
   it('빈 참가자 목록이면(버그가 있다면) 이 테스트가 실패한다', () => {
     const { lastFrame, unmount } = render(
-      <Lobby roomName="빈방" game="yacht" host="철수" players={[]} you="철수" onStart={() => {}} />,
+      <Lobby host="철수" players={[]} you="철수" onStart={() => {}} />,
     );
     // players가 비었으면 아무 이름도 렌더되지 않는다 — 위 테스트가 참가자 렌더 자체가 깨진
     // 회귀(예: players prop을 아예 안 쓰는 실수)를 잡아내는지 대조하기 위한 음성 대조군.
@@ -95,9 +88,11 @@ describe('ActionBar', () => {
     unmount();
   });
 
-  it('행동이 없으면(actions가 빈 배열) 키 힌트를 하나도 그리지 않는다', () => {
+  it('행동이 없으면(actions가 빈 배열) "할 수 있는 행동이 없습니다" 안내로 대체한다', () => {
     const { lastFrame, unmount } = render(<ActionBar actions={[]} labels={{ bet: '베팅' }} />);
-    expect(lastFrame() ?? '').not.toContain('베팅');
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('할 수 있는 행동이 없습니다');
+    expect(frame).not.toContain('베팅'); // 안내문 자체에 라벨 텍스트가 우연히 안 섞였는지도 확인
     unmount();
   });
 });

@@ -5,11 +5,11 @@ import { DEFAULT_TCP_PORT } from '@card-night/core';
 import type { GameId, ServerMsg, RoomInfo } from '@card-night/core';
 import { Room, startServer, startDiscovery } from '@card-night/server';
 import type { RunningServer, RunningDiscovery } from '@card-night/server';
-import { Connection } from '../net/connection.js';
+import { Connection, JoinError } from '../net/connection.js';
 import { discoverRooms } from '../net/discover.js';
 import { loadConfig, saveConfig } from '../config.js';
 import type { Theme } from '../art/theme.js';
-import { GAME_LABELS } from './gameLabels.js';
+import { GAME_LABELS, ACTION_LABELS } from './gameLabels.js';
 import { dedupeRooms } from './roomListUtils.js';
 import { Nickname } from './screens/Nickname.js';
 import { MainMenu } from './screens/MainMenu.js';
@@ -37,6 +37,18 @@ const GAME_VIEWS: Record<GameId, (props: GameViewProps) => React.JSX.Element> = 
   yacht: YachtView,
 };
 
+/**
+ * 저장된 설정 파일의 nickname을 NFC 정규화·trim해서 돌려준다. 결정 3은 "입력 시점"에
+ * Nickname.tsx에서 적용되지만, 그건 사용자가 직접 타이핑해 저장한 값에만 해당한다 — 이전
+ * 빌드가 저장했거나 사람이 손으로 고친 설정 파일은 NFD나 앞뒤 공백을 그대로 담고 있을 수
+ * 있다. 그 값이 정규화 없이 new Room({ host })로 들어가면, 서버가 trim한 canonical
+ * players/host 문자열과 영영 달라져 자기 방에서 자신을 호스트로 인식하지 못하는(★도, [Enter]
+ * 시작도 못 보는) 회복 불가능한 상태가 된다 — 그래서 여기서도 같은 정규화를 한 번 더 건다.
+ */
+function loadSavedNickname(): string {
+  return loadConfig().nickname?.normalize('NFC').trim() ?? '';
+}
+
 /** os.networkInterfaces()에서 첫 비내부(non-internal) IPv4 주소. 127.0.0.1은 호스트 본인만
  * 쓸 수 있어 "남에게 불러줄 주소"로는 의미가 없다 — 그래서 걸러낸다. */
 function firstNonInternalIPv4(): string | undefined {
@@ -60,9 +72,9 @@ function GameScreen({
     <Box flexDirection="column">
       <View view={view} you={you} send={send} theme={theme} />
       {/* 요구사항 4: 행동 바는 항상 지금 view.yourActions에서만 나온다 — 하드코딩된 목록이
-       * 아니다. 라벨은 Task 13~15가 게임별 어휘를 채우기 전까지는(그 컴포넌트 계약에 라벨을
-       * 넘길 자리가 없다) 액션 이름 자체로 폴백한다 — ActionBar 자체의 계약이다. */}
-      <ActionBar actions={view.yourActions} labels={{}} />
+       * 아니다. ACTION_LABELS는 세 엔진이 실제로 쓰는 액션 이름을 미리 채운 한국어 사전이고,
+       * 거기 없는 액션(향후 새 액션 등)은 ActionBar 자체 계약대로 이름 그대로 폴백한다. */}
+      <ActionBar actions={view.yourActions} labels={ACTION_LABELS} />
     </Box>
   );
 }
@@ -75,8 +87,8 @@ function GameScreen({
 export function App({ initialTheme }: AppProps): React.JSX.Element {
   const { exit } = useApp();
 
-  const [screen, setScreen] = useState<Screen>(() => (loadConfig().nickname ? 'menu' : 'nickname'));
-  const [nickname, setNickname] = useState<string>(() => loadConfig().nickname ?? '');
+  const [screen, setScreen] = useState<Screen>(() => (loadSavedNickname() ? 'menu' : 'nickname'));
+  const [nickname, setNickname] = useState<string>(loadSavedNickname);
   // 결정 2: "나"는 오직 서버가 정규화해 돌려준 이 값으로만 식별한다 — 아래 connectAndWire에서
   // conn.nickname을 대입하는 곳 외에는 절대 다른 값을 쓰지 않는다.
   const [you, setYou] = useState<string>('');
@@ -86,6 +98,9 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   const [scanning, setScanning] = useState(false);
   const [menuError, setMenuError] = useState<string | undefined>(undefined);
   const [roomListError, setRoomListError] = useState<string | undefined>(undefined);
+  // 'dup' 거절(중복 또는 형식이 잘못된 닉네임)로 방 참가가 막혔을 때, 방 목록이 아니라
+  // Nickname 화면으로 돌려보내며 채우는 메시지 — 사용자가 닉네임을 바꿀 방법이 이것뿐이다.
+  const [nicknameError, setNicknameError] = useState<string | undefined>(undefined);
   const [hostAddr, setHostAddr] = useState<string | undefined>(undefined);
   const [disconnectMessage, setDisconnectMessage] = useState('');
 
@@ -151,6 +166,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     // 저장·상태 반영만 한다.
     saveConfig({ nickname: normalized });
     setNickname(normalized);
+    setNicknameError(undefined);
     setScreen('menu');
   }, []);
 
@@ -191,7 +207,15 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
         } catch (err) {
           cleanupResources();
           setHostAddr(undefined);
-          setMenuError(err instanceof Error ? err.message : String(err));
+          // net/connection.ts가 이미 확립한 패턴과 동일: 원인은 cause로 보존하고, 사용자에게는
+          // 이 앱의 다른 모든 화면과 마찬가지로 한국어 문장만 보여준다. 실제로 밟히는 경로다 —
+          // 이전에 띄운 서버가 아직 포트를 쥐고 있거나, 방 만들기를 연달아 시도하면
+          // startServer가 EADDRINUSE류의 영어 Node 에러로 reject한다.
+          const wrapped = new Error('방을 만들지 못했습니다. 포트가 이미 사용 중일 수 있습니다.', {
+            cause: err,
+          });
+          console.error('[card-night] 방 생성 실패:', wrapped);
+          setMenuError(wrapped.message);
           setScreen('menu');
         }
       })();
@@ -199,26 +223,41 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     [nickname, connectAndWire, cleanupResources],
   );
 
+  /**
+   * join 시도가 실패했을 때의 공통 처리. 'dup'(중복 또는 형식이 잘못된 닉네임)만 특별
+   * 취급한다: 방 목록에 머물러 봐야 사용자가 닉네임을 바꿀 방법이 없으므로, Nickname
+   * 화면으로 돌려보내 새 닉네임을 받는다. 그 외(full/playing/네트워크 오류)는 방 목록에
+   * 남아 원인을 보여준다 — 방을 다시 고르거나 새로고침하면 되는 것들이기 때문이다.
+   *
+   * 서버 쪽 문구('사용할 수 없는 닉네임입니다 — 이미 사용 중이거나 형식이 올바르지
+   * 않습니다.')를 그대로 쓴다 — 중복이라고 단정하면 형식 오류로 거절된 사람에게 거짓
+   * 이유를 말하게 된다(server.ts의 동일한 이유와 같다).
+   */
+  const handleConnectError = useCallback((err: unknown): void => {
+    if (err instanceof JoinError && err.code === 'dup') {
+      setNicknameError(err.message);
+      setScreen('nickname');
+      return;
+    }
+    setRoomListError(err instanceof Error ? err.message : String(err));
+  }, []);
+
   const handleSelectRoom = useCallback(
     (room: RoomInfo): void => {
       setRoomListError(undefined);
       // RoomInfo는 포트를 싣지 않는다(발견 프로토콜의 기존 제약) — 발견된 방은 언제나
       // DEFAULT_TCP_PORT로 접속한다.
-      connectAndWire(room.addr, DEFAULT_TCP_PORT, nickname).catch((err: unknown) => {
-        setRoomListError(err instanceof Error ? err.message : String(err));
-      });
+      connectAndWire(room.addr, DEFAULT_TCP_PORT, nickname).catch(handleConnectError);
     },
-    [connectAndWire, nickname],
+    [connectAndWire, nickname, handleConnectError],
   );
 
   const handleManualConnect = useCallback(
     (host: string, port: number): void => {
       setRoomListError(undefined);
-      connectAndWire(host, port, nickname).catch((err: unknown) => {
-        setRoomListError(err instanceof Error ? err.message : String(err));
-      });
+      connectAndWire(host, port, nickname).catch(handleConnectError);
     },
-    [connectAndWire, nickname],
+    [connectAndWire, nickname, handleConnectError],
   );
 
   const handleQuit = useCallback((): void => {
@@ -243,7 +282,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
 
   return (
     <Box flexDirection="column">
-      {screen === 'nickname' && <Nickname onSubmit={handleNicknameSubmit} />}
+      {screen === 'nickname' && <Nickname onSubmit={handleNicknameSubmit} error={nicknameError} />}
 
       {screen === 'menu' && (
         <MainMenu
@@ -262,6 +301,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
           onRefresh={refreshRooms}
           onSelect={handleSelectRoom}
           onManualConnect={handleManualConnect}
+          onCancel={returnToMenu}
         />
       )}
 
@@ -275,8 +315,6 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
 
           {screen === 'lobby' && (
             <Lobby
-              roomName={roomState.room.name}
-              game={roomState.room.game}
               host={roomState.room.host}
               players={roomState.room.players}
               you={you}

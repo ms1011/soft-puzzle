@@ -1,11 +1,7 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { GameId } from '@card-night/core';
-import { GAME_LABELS } from '../gameLabels.js';
 
 export interface LobbyProps {
-  roomName: string;
-  game: GameId;
   host: string;
   players: string[];
   /** connection.nickname(서버가 정규화한 형태) — 결정 2: 절대 사용자가 타이핑한 원본 문자열이
@@ -19,8 +15,11 @@ export interface LobbyProps {
 /**
  * 로비 화면: 참가자 목록(호스트는 ★ 표시), 방장이면 [Enter] 시작 안내, 전원에게 "방장이
  * 나가면 방이 사라집니다" 문구, 호스트에게는 자신의 접속 주소.
+ *
+ * 방 이름·게임 타이틀은 여기서 그리지 않는다 — App의 공통 레이아웃(상단 테두리 바)이 이미
+ * 그린다. 리뷰에서 지적된 이중 렌더(같은 문자열이 테두리 바 안과 밖에 두 번 나오는) 회귀다.
  */
-export function Lobby({ roomName, game, host, players, you, hostAddr, onStart }: LobbyProps): React.JSX.Element {
+export function Lobby({ host, players, you, hostAddr, onStart }: LobbyProps): React.JSX.Element {
   const youAreHost = you === host;
 
   useInput((_input, key) => {
@@ -29,9 +28,6 @@ export function Lobby({ roomName, game, host, players, you, hostAddr, onStart }:
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold>
-        {roomName} [{GAME_LABELS[game]}]
-      </Text>
       {hostAddr !== undefined && <Text dimColor>내 접속 주소: {hostAddr}</Text>}
       <Box flexDirection="column" marginTop={1}>
         {players.map((p) => (

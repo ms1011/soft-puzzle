@@ -66,6 +66,11 @@ export class Room {
     if (this.players.length >= MAX_PLAYERS) return { ok: false, code: 'full' };
 
     this.players.push(nickname);
+    if (!this.players.includes(this.host)) {
+      // host가 더 이상 방에 없다(예: 방이 완전히 비었다가 다시 채워짐) — 새로 들어온 사람이
+      // host가 되어야 방이 영영 시작 불가능한 상태로 좌초되지 않는다.
+      this.host = nickname;
+    }
     this.broadcastState();
     return { ok: true };
   }
@@ -88,7 +93,17 @@ export class Room {
       this.players = this.players.filter((p) => p !== nickname);
     }
 
-    if (this.players.length === 0) return; // 방이 비었다 — 알릴 사람이 없다.
+    if (this.players.length === 0) {
+      // 방이 완전히 비었다 — 알릴 사람은 없지만, 세션 상태를 로비로 리셋해두지 않으면 이 방은
+      // 영원히 죽는다: phase가 'playing'/'result'에 멈춘 채면 info()는 "0/6"인데 join()은 계속
+      // {code:'playing'}을 돌려주고, phase가 'lobby'였더라도 host가 떠난 사람 이름에 고정된 채라
+      // 새로 들어온 사람은 절대 start할 수 없다(방장만 시작 가능이므로). host 자체는 join()에서
+      // "방에 없는 host"를 감지해 새로 들어온 사람으로 넘겨준다.
+      this.phase = 'lobby';
+      this.engine = undefined;
+      this.deadline = null;
+      return;
+    }
 
     if (wasHost) {
       // players는 join한 순서 그대로 유지되므로(제거만 하고 재정렬하지 않음), 맨 앞이

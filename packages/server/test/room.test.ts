@@ -348,13 +348,19 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
     room.handleMessage('영희', { type: 'action', name: 'bet', arg: 50 });
 
     let v = lastState(sent['철수']).view as any;
-    if (v.phase === 'acting' && v.others[0].isTurn) {
+    // 이 테스트가 실제로 노리는 상태(acting 단계, 곧 철수 자신의 턴)를 명시적으로 확인한다 —
+    // 시드나 엔진이 바뀌어 둘 다 자연 블랙잭이 되는 등으로 전제가 깨지면 조용히 통과하는 대신
+    // 여기서 바로 실패해야 한다.
+    expect(v.phase).toBe('acting');
+    if (v.others[0].isTurn) {
       // 영희 턴이 먼저라면 stand로 넘겨 철수 턴으로 만든다.
       room.handleMessage('영희', { type: 'action', name: 'stand' });
+      v = lastState(sent['철수']).view as any;
     }
-    // (드물게 둘 다 자연 블랙잭이면 이미 acting을 벗어나 있을 수 있다 — 그래도 leave는 안전해야 한다.)
+    expect(v.phase).toBe('acting');
+    expect(v.others[0].isTurn).toBe(false); // 2인전이므로 영희 턴이 아니면 지금은 철수 자신의 턴이다
 
-    expect(() => room.leave('철수')).not.toThrow(); // 자신의 턴 도중(혹은 그 직후) host 이탈
+    expect(() => room.leave('철수')).not.toThrow(); // 자신의 턴 도중 host 이탈
 
     // 2명 중 1명만 남았으므로 엔진이 스스로 게임을 종료 처리하고, 새 host(영희)가 정상적으로 안내된다.
     expect(lastState(sent['영희']).room.host).toBe('영희');
@@ -375,6 +381,10 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
     const afterLeave = lastState(sent['영희']);
     expect(afterLeave.room.host).toBe('영희'); // Room 차원에서 재할당됨
     expect(afterLeave.phase).toBe('playing'); // 아직 진행 중(2명 남음, order.length>1)
+    // setHost의 두 번째 관측 가능한 효과: getViewFor 경로(yourActions)도 새 host를 인정해야
+    // 클라이언트가 endGame 버튼을 실제로 보여줄 수 있다 — 게이트(handleAction)만 통과하고
+    // 액션 목록에는 반영이 안 되는 반쪽짜리 수정이 아님을 확인한다.
+    expect((afterLeave.view as any).yourActions).toContain('endGame');
 
     room.handleMessage('영희', { type: 'action', name: 'endGame' });
 
@@ -420,6 +430,70 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
       // 승격된 새 host(영희)만이 이 순환을 끝낼 수 있다 — 그리고 이제는 받아들여진다.
       room.handleMessage('영희', { type: 'action', name: 'endGame' });
       expect(lastState(sent['영희']).phase).toBe('result');
+    },
+  );
+});
+
+describe('Room — 빈 방 복구(완전히 비었던 방이 좌초되지 않아야 한다)', () => {
+  it('lobby에서 마지막 인원이 나가도, 새로 들어온 사람이 host가 되어 정상적으로 시작할 수 있다', () => {
+    const { room, sent } = setup();
+    room.join('철수'); // host
+    room.leave('철수'); // 방이 완전히 빈다
+
+    expect(room.info().players).toBe(`0/${MAX_PLAYERS}`);
+
+    expect(room.join('영희')).toEqual({ ok: true }); // join()이 'playing'으로 영구 고정되지 않았다
+    const lobbyState = lastState(sent['영희']);
+    expect(lobbyState.phase).toBe('lobby');
+    expect(lobbyState.room.host).toBe('영희'); // 죽은 host('철수') 이름에 고정되지 않았다
+
+    // 아직 minPlayers(2) 미만이므로 start는 정상적으로 "인원 부족" 안내만 온다 — 즉 영희가
+    // host로 제대로 인식되고 있다(host가 아니라는 거부가 아니라 인원 부족 거부라는 점이 중요).
+    room.handleMessage('영희', { type: 'action', name: 'start' });
+    expect(lastState(sent['영희']).phase).toBe('lobby');
+    expect(events(sent['영희']).length).toBeGreaterThan(0);
+    expect(events(sent['영희'])[0].text).not.toContain('방장');
+
+    expect(room.join('민수')).toEqual({ ok: true });
+    room.handleMessage('영희', { type: 'action', name: 'start' });
+    expect(lastState(sent['영희']).phase).toBe('playing'); // 정상적으로 시작된다
+  });
+
+  it(
+    'playing 중 마지막 인원이 나가도 방이 되살아난다 — 새로 입장한 두 사람이 ' +
+      '버려진 라운드를 이어받지 않고 완전히 새 게임을 깨끗하게 시작할 수 있다',
+    () => {
+      const { room, sent } = setup();
+      room.join('철수'); // host
+      room.join('영희');
+      room.handleMessage('철수', { type: 'action', name: 'start' });
+      expect(lastState(sent['철수']).phase).toBe('playing');
+
+      room.leave('철수'); // 2명 중 1명만 남아 엔진이 스스로 종료 → phase 'result'
+      expect(lastState(sent['영희']).phase).toBe('result');
+
+      room.leave('영희'); // 방이 완전히 빈다(phase가 'playing'/'result'에 멈춰있던 채로)
+
+      expect(room.info().players).toBe(`0/${MAX_PLAYERS}`); // 더 이상 "0/6"에 'playing'으로 갇히지 않는다
+
+      expect(room.join('민수')).toEqual({ ok: true }); // join()이 더 이상 {code:'playing'}을 반환하지 않는다
+      expect(room.join('지영')).toEqual({ ok: true });
+      const lobbyState = lastState(sent['민수']);
+      expect(lobbyState.phase).toBe('lobby');
+      expect(lobbyState.room.host).toBe('민수'); // 죽은 host('철수'/'영희') 이름에 고정되지 않았다
+      expect(lobbyState.room.players).toEqual(['민수', '지영']);
+
+      room.handleMessage('민수', { type: 'action', name: 'start' });
+      const started = lastState(sent['민수']);
+      expect(started.phase).toBe('playing');
+
+      // 버려진 라운드가 재개된 게 아니라 진짜 새 엔진인지 확인한다: 새 플레이어만 등장해야 하고
+      // (예전 철수/영희의 흔적 없음), 블랙잭 새 라운드는 항상 betting에서 시작 칩 그대로 연다.
+      const view = started.view as any;
+      expect(view.phase).toBe('betting');
+      expect(view.you.chips).toBe(1000); // START_CHIPS — 이전 라운드의 잔여 칩이 아니다
+      expect(view.others.map((o: any) => o.nickname)).toEqual(['지영']); // 철수/영희 흔적 없음
+      expect(started.room.players).toEqual(['민수', '지영']);
     },
   );
 });

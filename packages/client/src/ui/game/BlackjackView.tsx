@@ -32,9 +32,14 @@ function fmtChips(n: number): string {
   return `칩 ${n.toLocaleString('ko-KR')}`;
 }
 
-/** dealer.hand(공개된 카드) 뒤에 hiddenCount만큼 'back'을 이어붙인 렌더용 배열. */
+/**
+ * dealer.hand(공개된 카드) 앞에 hiddenCount만큼 'back'을 붙인 렌더용 배열. renderHand는
+ * 배열의 마지막 카드만 온전히(폭 7) 그리고 나머지는 왼쪽 2칸만 보여준다 — 뒷면을 뒤에
+ * 두면 정작 알아야 할 공개 카드가 잘려 보이는 반전이 생기므로, 뒷면을 앞에 둬서 항상
+ * 실제로 공개된 카드(있다면)가 마지막 자리에서 온전히 보이게 한다.
+ */
 function dealerCards(dealer: { hand: Card[]; hiddenCount: number }): (Card | 'back')[] {
-  return [...dealer.hand, ...Array(Math.max(0, dealer.hiddenCount)).fill('back' as const)];
+  return [...Array(Math.max(0, dealer.hiddenCount)).fill('back' as const), ...dealer.hand];
 }
 
 /**
@@ -172,8 +177,8 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
       {canBet && (
         <Box marginTop={1}>
           <Text>
-            베팅액: {clampedBet.toLocaleString('ko-KR')} (↑↓ 10단위 조절, Enter로 베팅, 최대{' '}
-            {maxBet.toLocaleString('ko-KR')})
+            베팅액: {clampedBet.toLocaleString('ko-KR')} ({theme.unicode ? '↑↓' : '위/아래'} 10단위 조절,
+            Enter로 베팅, 최대 {maxBet.toLocaleString('ko-KR')})
           </Text>
         </Box>
       )}

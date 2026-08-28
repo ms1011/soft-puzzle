@@ -45,15 +45,22 @@ interface OneCardGameView {
  * 이런 "한 장만 다른 높이"를 표현할 수 없어(카드마다 완전히 같은 5줄 밴드를 가정) 여기서
  * renderCard를 카드별로 다시 합성한다. 전체 격자는 6줄(카드 5줄 + 들어 올린 만큼의 여유
  * 1줄) — 선택된 카드는 0~4행, 나머지는 1~5행을 차지해 상대적으로 한 칸 위에 떠 보인다.
+ *
+ * 마지막 카드뿐 아니라 선택된 카드도 항상 온전한 폭(7칸)으로 그린다 — 그렇지 않으면
+ * 손패 중간에 있는 카드를 선택했을 때 왼쪽 2칸만 보이는 겹침 규칙에 가려 "무엇을
+ * 골랐는지" 거의 안 보이는 상태가 된다. 강조가 곧 이 함수의 목적이므로 선택 카드는
+ * 예외로 둔다.
  */
 function renderLiftedHand(cards: Card[], selectedIndex: number, theme: GameViewProps['theme']): string[] {
   const rows: string[] = Array.from({ length: CARD_HEIGHT + 1 }, () => '');
   cards.forEach((card, i) => {
     const isLast = i === cards.length - 1;
-    const width = isLast ? CARD_WIDTH : OVERLAP_WIDTH;
+    const isSelected = i === selectedIndex;
+    const full = isLast || isSelected;
+    const width = full ? CARD_WIDTH : OVERLAP_WIDTH;
     const lines = renderCard(card, theme);
-    const sliceLine = (line: string): string => (isLast ? line : [...line].slice(0, OVERLAP_WIDTH).join(''));
-    const offset = i === selectedIndex ? 0 : 1;
+    const sliceLine = (line: string): string => (full ? line : [...line].slice(0, OVERLAP_WIDTH).join(''));
+    const offset = isSelected ? 0 : 1;
     for (let r = 0; r < rows.length; r++) {
       const cardRow = r - offset;
       rows[r] += cardRow >= 0 && cardRow < CARD_HEIGHT ? sliceLine(lines[cardRow]) : ' '.repeat(width);
@@ -158,7 +165,7 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
         {v.others.map((o) => (
           <Text key={o.nickname}>
             {o.isTurn ? (theme.unicode ? '◀ ' : '< ') : '  '}
-            {o.nickname} — {o.handCount}장
+            {o.nickname} - {o.handCount}장
           </Text>
         ))}
       </Box>
@@ -178,7 +185,7 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
         <Box marginTop={1}>
           <Text>
             무늬 선택: {SUITS.map((s, i) => (i === suitCursor ? `[${suitGlyph(s, theme.unicode)}]` : ` ${suitGlyph(s, theme.unicode)} `)).join(' ')}
-            {'  '}(←→ 이동, Enter 확정)
+            {'  '}({theme.unicode ? '←→' : '좌/우'} 이동, Enter 확정)
           </Text>
         </Box>
       )}

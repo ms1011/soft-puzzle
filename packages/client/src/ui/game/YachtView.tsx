@@ -120,7 +120,11 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
   const safeCursor = Math.min(cursor, Math.max(0, unscored.length - 1));
   const cursorCat = selecting ? unscored[safeCursor] : undefined;
 
-  const nameWidth = Math.max(4, ...v.players.map((p) => displayWidth(p.nickname) + (p.isTurn ? 2 : 0)));
+  // 헤더 칸 폭: 커서 자리(항상 1칸 예약) + 닉네임 표시폭 + 본인이면 '*' 1칸.
+  const nameWidth = Math.max(
+    4,
+    ...v.players.map((p) => 1 + displayWidth(p.nickname) + (p.nickname === you ? 1 : 0)),
+  );
   const labelWidth = Math.max(...Object.values(CATEGORY_LABELS).map(displayWidth), 4);
 
   function scoreCell(p: YachtPlayerView, cat: YachtCategory): string {
@@ -128,8 +132,10 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
     return score === undefined ? '-' : String(score);
   }
 
+  const cursorGlyph = theme.unicode ? '▶' : '>';
+
   function playerHeader(p: YachtPlayerView): string {
-    const name = `${p.isTurn ? '▶' : ' '}${p.nickname}${p.nickname === you ? '*' : ''}`;
+    const name = `${p.isTurn ? cursorGlyph : ' '}${p.nickname}${p.nickname === you ? '*' : ''}`;
     return padDisplay(name, nameWidth);
   }
 
@@ -152,7 +158,7 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
             const isCursorRow = cursorCat === cat;
             return (
               <Text key={cat} bold={isCursorRow}>
-                {isCursorRow ? '▶' : ' '}
+                {isCursorRow ? cursorGlyph : ' '}
                 {padDisplay(CATEGORY_LABELS[cat], labelWidth - 1)}{' '}
                 {v.players.map((p) => padDisplay(scoreCell(p, cat), nameWidth)).join(' ')}
               </Text>
@@ -172,7 +178,7 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
 
       {selecting && (
         <Box marginTop={1}>
-          <Text>카테고리 선택: ↑↓ 이동, Enter 확정, c 취소</Text>
+          <Text>카테고리 선택: {theme.unicode ? '↑↓' : '위/아래'} 이동, Enter 확정, c 취소</Text>
         </Box>
       )}
     </Box>

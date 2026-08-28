@@ -158,9 +158,20 @@ describe('BlackjackView', () => {
     // 회귀 테스트: dealer 카드 배열을 [공개..., 뒷면...] 순서로 넘기면 renderHand가
     // 마지막(뒷면)만 온전히 그리고 공개 카드는 2칸으로 잘려 무늬(♠)가 아예 안 보였다.
     // dealer.hand: ['9S'], hiddenCount: 1 — 공개된 9S의 무늬(♠)가 실제로 보여야 한다.
+    //
+    // 리뷰 지적: 처음 버전은 frame 전체에서 '♠'를 찾았는데, actingView의 내 손패
+    // (['7H', '10S'])에 있는 10S도 마지막 카드라 항상 온전한 폭으로 그려져 '♠'를
+    // 낸다 — 딜러 순서를 일부러 되돌려도(버그 재현) 이 무관한 카드 때문에 테스트가
+    // 계속 통과했다. 딜러 행만(다음 좌석 줄 전까지) 잘라서 그 안에서만 확인한다.
     const { lastFrame, unmount } = render(<BlackjackView {...baseProps()} />);
     const frame = lastFrame() ?? '';
-    expect(frame).toContain('♠');
+    const lines = frame.split('\n');
+    const dealerIdx = lines.findIndex((l) => l.includes('딜러'));
+    expect(dealerIdx).toBeGreaterThanOrEqual(0);
+    const nextSeatIdx = lines.findIndex((l, i) => i > dealerIdx && l.includes('철수'));
+    expect(nextSeatIdx).toBeGreaterThan(dealerIdx);
+    const dealerBlock = lines.slice(dealerIdx, nextSeatIdx).join('\n');
+    expect(dealerBlock).toContain('♠');
     unmount();
   });
 

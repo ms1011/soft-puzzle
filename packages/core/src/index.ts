@@ -21,3 +21,5 @@ export { handValue, BlackjackEngine } from './games/blackjack.js';
 
 export type { YachtCategory } from './games/yacht.js';
 export { scoreCategory, YachtEngine } from './games/yacht.js';
+
+export { canPlay, OneCardEngine } from './games/onecard.js';

@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { Room, startServer } from '@card-night/server';
-import type { RunningServer } from '@card-night/server';
-import type { ServerMsg } from '@card-night/core';
+import { Room, startServer } from '@soft-puzzle/server';
+import type { RunningServer } from '@soft-puzzle/server';
+import type { ServerMsg } from '@soft-puzzle/core';
 import { Connection, JoinError } from '../src/net/connection.js';
 
 describe('Connection', () => {

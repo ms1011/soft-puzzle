@@ -29,7 +29,7 @@ export function Nickname({ onSubmit, error }: NicknameProps): React.JSX.Element 
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold>카드나이트</Text>
+      <Text bold>소프트퍼즐</Text>
       <Text>닉네임을 입력하세요:</Text>
       <Box>
         <Text>{'> '}</Text>

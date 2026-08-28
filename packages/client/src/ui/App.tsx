@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import os from 'node:os';
-import type { GameId, ServerMsg, RoomInfo } from '@card-night/core';
-import { Room, startServer, startDiscovery } from '@card-night/server';
-import type { RunningServer, RunningDiscovery } from '@card-night/server';
+import type { GameId, ServerMsg, RoomInfo } from '@soft-puzzle/core';
+import { Room, startServer, startDiscovery } from '@soft-puzzle/server';
+import type { RunningServer, RunningDiscovery } from '@soft-puzzle/server';
 import { Connection, JoinError } from '../net/connection.js';
 import { discoverRooms } from '../net/discover.js';
 import { loadConfig, saveConfig } from '../config.js';
@@ -228,7 +228,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
           const wrapped = new Error('방을 만들지 못했습니다. 포트가 이미 사용 중일 수 있습니다.', {
             cause: err,
           });
-          console.error('[card-night] 방 생성 실패:', wrapped);
+          console.error('[soft-puzzle] 방 생성 실패:', wrapped);
           setMenuError(wrapped.message);
           setScreen('menu');
         }

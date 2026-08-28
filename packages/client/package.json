@@ -1,10 +1,10 @@
 {
-  "name": "card-night",
+  "name": "soft-puzzle",
   "version": "0.1.0",
   "description": "터미널에서 즐기는 LAN 카드게임(블랙잭·원카드·야추) 파티 게임",
   "type": "module",
   "bin": {
-    "card-night": "dist/index.js"
+    "soft-puzzle": "dist/index.js"
   },
   "files": [
     "dist"
@@ -18,14 +18,15 @@
     "react": "^18"
   },
   "devDependencies": {
-    "@card-night/core": "*",
-    "@card-night/server": "*",
+    "@soft-puzzle/core": "*",
+    "@soft-puzzle/server": "*",
     "ink-testing-library": "^4",
     "@types/react": "^18",
     "tsup": "^8.5.1"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests",
-    "build": "tsup"
+    "build": "tsup",
+    "prepack": "npm run build"
   }
 }

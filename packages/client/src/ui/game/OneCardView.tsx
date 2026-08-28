@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Card, Suit } from '@card-night/core';
-import { canPlay, rankOf } from '@card-night/core';
+import type { Card, Suit } from '@soft-puzzle/core';
+import { canPlay, rankOf } from '@soft-puzzle/core';
 import { renderCard, renderHand } from '../../art/cards.js';
 import type { GameViewProps } from './types.js';
 

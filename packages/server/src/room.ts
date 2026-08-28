@@ -5,8 +5,8 @@ import {
   BlackjackEngine,
   YachtEngine,
   OneCardEngine,
-} from '@card-night/core';
-import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent } from '@card-night/core';
+} from '@soft-puzzle/core';
+import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent } from '@soft-puzzle/core';
 
 export interface RoomOpts {
   name: string;

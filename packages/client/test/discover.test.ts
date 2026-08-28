@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import dgram from 'node:dgram';
 import type { AddressInfo } from 'node:net';
-import { startDiscovery } from '@card-night/server';
-import type { RunningDiscovery } from '@card-night/server';
-import { DISCOVERY_PROBE } from '@card-night/core';
-import type { RoomInfo } from '@card-night/core';
+import { startDiscovery } from '@soft-puzzle/server';
+import type { RunningDiscovery } from '@soft-puzzle/server';
+import { DISCOVERY_PROBE } from '@soft-puzzle/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 import { discoverRooms } from '../src/net/discover.js';
 
 function makeInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {

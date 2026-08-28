@@ -1,6 +1,6 @@
 import net from 'node:net';
-import { encodeMsg, NdjsonDecoder, DEFAULT_TCP_PORT } from '@card-night/core';
-import type { ClientMsg, ServerMsg } from '@card-night/core';
+import { encodeMsg, NdjsonDecoder, DEFAULT_TCP_PORT } from '@soft-puzzle/core';
+import type { ClientMsg, ServerMsg } from '@soft-puzzle/core';
 import type { Room } from './room.js';
 
 export interface RunningServer {
@@ -216,7 +216,7 @@ export function startServer(room: Room, preferredPort: number = DEFAULT_TCP_PORT
         // 이 시점부터는 재시도 대상이 아니다. 그렇다고 조용히 삼키면 운영 중 장애가 아무
         // 흔적도 안 남으므로 최소한 stderr에는 남긴다.
         server.on('error', (err) => {
-          console.error('[card-night] TCP 서버 에러:', err);
+          console.error('[soft-puzzle] TCP 서버 에러:', err);
         });
         const addr = server.address();
         const boundPort = addr && typeof addr === 'object' ? addr.port : port;

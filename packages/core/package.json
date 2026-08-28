@@ -1,5 +1,5 @@
 {
-  "name": "@card-night/core",
+  "name": "@soft-puzzle/core",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

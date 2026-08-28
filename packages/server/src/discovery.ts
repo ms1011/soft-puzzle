@@ -1,8 +1,8 @@
 import dgram from 'node:dgram';
 import os from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { DISCOVERY_PROBE, DEFAULT_UDP_PORT } from '@card-night/core';
-import type { RoomInfo } from '@card-night/core';
+import { DISCOVERY_PROBE, DEFAULT_UDP_PORT } from '@soft-puzzle/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 
 export interface RunningDiscovery {
   port: number;

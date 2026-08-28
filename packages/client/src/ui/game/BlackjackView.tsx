@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { handValue } from '@card-night/core';
-import type { Card } from '@card-night/core';
+import { handValue } from '@soft-puzzle/core';
+import type { Card } from '@soft-puzzle/core';
 import { renderHand } from '../../art/cards.js';
 import type { GameViewProps } from './types.js';
 

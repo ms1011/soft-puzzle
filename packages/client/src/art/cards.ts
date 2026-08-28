@@ -1,5 +1,5 @@
-import type { Card, Suit } from '@card-night/core';
-import { suitOf, rankOf } from '@card-night/core';
+import type { Card, Suit } from '@soft-puzzle/core';
+import { suitOf, rankOf } from '@soft-puzzle/core';
 import type { Theme } from './theme.js';
 
 const CARD_HEIGHT = 5;

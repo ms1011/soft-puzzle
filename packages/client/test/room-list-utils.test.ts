@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { dedupeRooms, parseHostPort, resolveRoomTarget } from '../src/ui/roomListUtils.js';
-import { DEFAULT_TCP_PORT } from '@card-night/core';
-import type { RoomInfo } from '@card-night/core';
+import { DEFAULT_TCP_PORT } from '@soft-puzzle/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 
 function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
   return { room: '테스트 방', game: 'blackjack', players: '1/6', addr: '127.0.0.1', ...overrides };

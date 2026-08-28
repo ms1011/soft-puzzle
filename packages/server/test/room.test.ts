@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Room } from '../src/room.js';
-import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS } from '@card-night/core';
-import type { ServerMsg, GameId } from '@card-night/core';
+import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS } from '@soft-puzzle/core';
+import type { ServerMsg, GameId } from '@soft-puzzle/core';
 
 type StateMsg = Extract<ServerMsg, { type: 'state' }>;
 type EventMsg = Extract<ServerMsg, { type: 'event' }>;

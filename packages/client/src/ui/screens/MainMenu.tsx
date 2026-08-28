@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { GameId } from '@card-night/core';
+import type { GameId } from '@soft-puzzle/core';
 import { GAME_IDS, GAME_LABELS } from '../gameLabels.js';
 
 export interface MainMenuProps {
@@ -64,7 +64,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onQuit, error }: MainMenuPr
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold>카드나이트</Text>
+      <Text bold>소프트퍼즐</Text>
       {mode === 'gameSelect' && <Text>게임을 선택하세요 (Esc로 뒤로):</Text>}
       {items.map((label, i) => (
         <Text key={label} inverse={i === selected}>

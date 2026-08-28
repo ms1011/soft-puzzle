@@ -1,7 +1,7 @@
 import dgram from 'node:dgram';
 import os from 'node:os';
-import { DISCOVERY_PROBE, DEFAULT_UDP_PORT } from '@card-night/core';
-import type { RoomInfo, GameId } from '@card-night/core';
+import { DISCOVERY_PROBE, DEFAULT_UDP_PORT } from '@soft-puzzle/core';
+import type { RoomInfo, GameId } from '@soft-puzzle/core';
 
 const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht'];
 

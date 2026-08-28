@@ -7,12 +7,12 @@ export interface ClientConfig {
 }
 
 /**
- * 설정 파일 경로. 환경변수 CARD_NIGHT_CONFIG가 있으면 그 값을, 없으면
- * ~/.card-night.json을 매 호출마다 다시 계산해서 돌려준다 — 상수로 한 번만 계산해 캐싱하면
+ * 설정 파일 경로. 환경변수 SOFT_PUZZLE_CONFIG가 있으면 그 값을, 없으면
+ * ~/.soft-puzzle.json을 매 호출마다 다시 계산해서 돌려준다 — 상수로 한 번만 계산해 캐싱하면
  * 테스트가 임시 경로로 리다이렉트할 방법이 없어진다(모듈은 프로세스당 한 번만 로드된다).
  */
 export function configPath(): string {
-  return process.env.CARD_NIGHT_CONFIG ?? path.join(os.homedir(), '.card-night.json');
+  return process.env.SOFT_PUZZLE_CONFIG ?? path.join(os.homedir(), '.soft-puzzle.json');
 }
 
 /**

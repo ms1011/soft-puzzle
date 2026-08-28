@@ -1,5 +1,5 @@
 {
-  "name": "card-night-workspace",
+  "name": "soft-puzzle-workspace",
   "private": true,
   "type": "module",
   "workspaces": ["packages/*"],

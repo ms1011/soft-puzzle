@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { YachtCategory } from '@card-night/core';
+import type { YachtCategory } from '@soft-puzzle/core';
 import { renderDice } from '../../art/dice.js';
 import { displayWidth } from '../../art/width.js';
 import type { GameViewProps } from './types.js';

@@ -1,4 +1,4 @@
-import type { GameView } from '@card-night/core';
+import type { GameView } from '@soft-puzzle/core';
 import type { Theme } from '../../art/theme.js';
 
 /**

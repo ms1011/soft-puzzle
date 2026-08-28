@@ -1,5 +1,5 @@
-import { DEFAULT_TCP_PORT } from '@card-night/core';
-import type { RoomInfo } from '@card-night/core';
+import { DEFAULT_TCP_PORT } from '@soft-puzzle/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 
 /** loopback(127.0.0.1)로 취급하는 주소. discoverRooms가 돌려주는 addr는 IPv4 문자열이다. */
 function isLoopbackAddr(addr: string): boolean {

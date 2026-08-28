@@ -1,4 +1,4 @@
-# 카드나이트 (card-night)
+# 소프트퍼즐 (soft-puzzle)
 
 같은 와이파이(LAN)에 모인 사람들이 터미널만으로 즐기는 카드게임 파티입니다.
 설치할 앱도, 계정도, 인터넷도 필요 없습니다 — 한 명이 방을 만들면 나머지는
@@ -16,13 +16,13 @@
 npm에 게시된 뒤에는 아래로 설치합니다.
 
 ```bash
-npm install -g card-night
+npm install -g soft-puzzle
 ```
 
 또는 설치 없이 그때그때 실행만 하려면:
 
 ```bash
-npx card-night
+npx soft-puzzle
 ```
 
 아직 게시 전이라 저장소에서 직접 써야 한다면, 이 저장소를 clone한 뒤:
@@ -36,17 +36,17 @@ npm install -g ./packages/client
 ## 실행
 
 ```bash
-card-night
+soft-puzzle
 ```
 
-닉네임을 한 번 입력하면 `~/.card-night.json`에 저장되어 다음부터는 바로 메인
-메뉴로 들어갑니다. (저장 위치를 바꾸고 싶다면 `CARD_NIGHT_CONFIG` 환경변수로
+닉네임을 한 번 입력하면 `~/.soft-puzzle.json`에 저장되어 다음부터는 바로 메인
+메뉴로 들어갑니다. (저장 위치를 바꾸고 싶다면 `SOFT_PUZZLE_CONFIG` 환경변수로
 다른 경로를 지정할 수 있습니다.)
 
 ### `--ascii` 옵션
 
 ```bash
-card-night --ascii
+soft-puzzle --ascii
 ```
 
 카드·주사위를 그리는 데 쓰는 박스 문자(┌─┐ 등)나 무늬 기호(♠♥♦♣)가 깨지는
@@ -58,7 +58,7 @@ card-night --ascii
 ### 방화벽 안내
 
 방을 만들거나(호스트) 방을 찾을 때(참가자) 모두 로컬 네트워크 통신이 필요합니다.
-**macOS**와 **Windows** 모두 `card-night`를 처음 실행할 때 "네트워크의 다른 기기가
+**macOS**와 **Windows** 모두 `soft-puzzle`를 처음 실행할 때 "네트워크의 다른 기기가
 이 앱을 찾을 수 있게 허용하시겠습니까?" 같은 방화벽 허용 팝업을 띄웁니다 — **반드시
 허용**을 눌러야 방 만들기/방 찾기가 정상 동작합니다. 회사·공용 네트워크처럼
 브로드캐스트가 막혀 있는 환경에서는 허용해도 방 목록에 아무것도 안 뜰 수 있는데,

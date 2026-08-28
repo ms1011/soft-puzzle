@@ -1,11 +1,11 @@
 {
-  "name": "@card-night/server",
+  "name": "@soft-puzzle/server",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@card-night/core": "*"
+    "@soft-puzzle/core": "*"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests"

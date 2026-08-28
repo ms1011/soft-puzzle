@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import type { RoomInfo } from '@card-night/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 import { GAME_LABELS } from '../gameLabels.js';
 import { parseHostPort } from '../roomListUtils.js';
 

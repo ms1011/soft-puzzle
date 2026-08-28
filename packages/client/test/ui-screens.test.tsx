@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
-import type { RoomInfo } from '@card-night/core';
+import type { RoomInfo } from '@soft-puzzle/core';
 import { Nickname } from '../src/ui/screens/Nickname.js';
 import { Lobby } from '../src/ui/screens/Lobby.js';
 import { Result } from '../src/ui/screens/Result.js';

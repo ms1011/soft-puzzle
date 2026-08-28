@@ -1,4 +1,4 @@
-# card-night MVP Implementation Plan
+# soft-puzzle MVP Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -27,7 +27,7 @@
 ## File Structure
 
 ```
-card-night/
+soft-puzzle/
 ├── package.json                  # workspaces 루트, scripts: test/build/typecheck
 ├── tsconfig.base.json
 ├── vitest.workspace.ts
@@ -48,7 +48,7 @@ card-night/
     │   └── discovery.ts          # UDP 방 알림 응답기
     └── client/src/
         ├── index.tsx             # bin 엔트리, --ascii 플래그, Ink render
-        ├── config.ts             # ~/.card-night.json (닉네임 저장)
+        ├── config.ts             # ~/.soft-puzzle.json (닉네임 저장)
         ├── net/connection.ts     # TCP 클라이언트 (Connection)
         ├── net/discover.ts       # UDP 브로드캐스트 스캔
         ├── art/theme.ts          # 유니코드/ascii 모드 감지
@@ -73,7 +73,7 @@ card-night/
 
 **Interfaces:**
 - Consumes: 없음 (최초 태스크)
-- Produces: 이후 모든 태스크가 쓰는 빌드/테스트 파이프라인. 패키지명 `@card-night/core`, `@card-night/server`, `@card-night/client`. `server`·`client`는 `@card-night/core`에, `client`는 `@card-night/server`에도 workspace 의존.
+- Produces: 이후 모든 태스크가 쓰는 빌드/테스트 파이프라인. 패키지명 `@soft-puzzle/core`, `@soft-puzzle/server`, `@soft-puzzle/client`. `server`·`client`는 `@soft-puzzle/core`에, `client`는 `@soft-puzzle/server`에도 workspace 의존.
 
 - [ ] **Step 1: 루트/패키지 설정 파일 작성**
 
@@ -81,7 +81,7 @@ card-night/
 
 ```json
 {
-  "name": "card-night-workspace",
+  "name": "soft-puzzle-workspace",
   "private": true,
   "type": "module",
   "workspaces": ["packages/*"],
@@ -109,7 +109,7 @@ card-night/
 }
 ```
 
-각 패키지 `package.json`은 `{"name": "@card-night/core", "type": "module", "exports": {".": "./src/index.ts"}}` 형태(개발 중엔 소스 직접 참조, vitest가 TS를 처리). `server`는 dependencies에 `"@card-night/core": "*"`, `client`는 `"@card-night/core": "*", "@card-night/server": "*"`. 각 패키지 `tsconfig.json`은 `../../tsconfig.base.json`을 extends 하고 references로 의존 패키지를 가리킨다. `vitest.workspace.ts`는 `export default ['packages/*']`. `.gitignore`: `node_modules/`, `dist/`.
+각 패키지 `package.json`은 `{"name": "@soft-puzzle/core", "type": "module", "exports": {".": "./src/index.ts"}}` 형태(개발 중엔 소스 직접 참조, vitest가 TS를 처리). `server`는 dependencies에 `"@soft-puzzle/core": "*"`, `client`는 `"@soft-puzzle/core": "*", "@soft-puzzle/server": "*"`. 각 패키지 `tsconfig.json`은 `../../tsconfig.base.json`을 extends 하고 references로 의존 패키지를 가리킨다. `vitest.workspace.ts`는 `export default ['packages/*']`. `.gitignore`: `node_modules/`, `dist/`.
 
 - [ ] **Step 2: 스모크 테스트 작성**
 
@@ -649,12 +649,12 @@ export class Connection {
   onClose(cb: () => void): void;    // 소켓 끊김 (호스트 이탈 감지)
   close(): void;
 }
-export function loadConfig(): { nickname?: string };          // ~/.card-night.json, 없거나 깨지면 {}
+export function loadConfig(): { nickname?: string };          // ~/.soft-puzzle.json, 없거나 깨지면 {}
 export function saveConfig(cfg: { nickname: string }): void;
-export const CONFIG_PATH: string;  // path.join(os.homedir(), '.card-night.json')
+export const CONFIG_PATH: string;  // path.join(os.homedir(), '.soft-puzzle.json')
 ```
 
-- [ ] **Step 1: 실패 테스트 작성** — Connection: 실제 `startServer`(블랙잭 Room) 띄우고 ① connect 성공 시 joined 완료 ② 닉 중복 접속은 `dup` 코드로 reject ③ 서버 close 시 onClose 발화. Config: `CONFIG_PATH`를 환경변수 `CARD_NIGHT_CONFIG`로 오버라이드 가능하게 하여 임시 경로에서 저장/로드/깨진 JSON 복원 테스트.
+- [ ] **Step 1: 실패 테스트 작성** — Connection: 실제 `startServer`(블랙잭 Room) 띄우고 ① connect 성공 시 joined 완료 ② 닉 중복 접속은 `dup` 코드로 reject ③ 서버 close 시 onClose 발화. Config: `CONFIG_PATH`를 환경변수 `SOFT_PUZZLE_CONFIG`로 오버라이드 가능하게 하여 임시 경로에서 저장/로드/깨진 JSON 복원 테스트.
 
 - [ ] **Step 2: 실패 확인 → 구현 → 통과 확인** — Run: `npm test -w packages/client`.
 
@@ -754,7 +754,7 @@ it('detectTheme: --ascii 플래그와 구형 콘솔 감지', () => {
 
 - [ ] **Step 2: 실패 확인 → 화면 구현 → 통과 확인** — Run: `npm test -w packages/client`.
 
-- [ ] **Step 3: 손 검증** — 임시 실행 스크립트로 호스트 모드 기동 → 터미널 2개(두 번째는 `CARD_NIGHT_CONFIG` 다른 경로 + IP 직접 입력)로 로비까지 접속 확인.
+- [ ] **Step 3: 손 검증** — 임시 실행 스크립트로 호스트 모드 기동 → 터미널 2개(두 번째는 `SOFT_PUZZLE_CONFIG` 다른 경로 + IP 직접 입력)로 로비까지 접속 확인.
 
 - [ ] **Step 4: 전체 회귀** — Run: `npm test && npm run typecheck`.
 
@@ -836,17 +836,17 @@ it('detectTheme: --ascii 플래그와 구형 콘솔 감지', () => {
 
 **Interfaces:**
 - Consumes: 전체
-- Produces: `npx card-night` / `npm i -g card-night`로 실행 가능한 패키지
+- Produces: `npx soft-puzzle` / `npm i -g soft-puzzle`로 실행 가능한 패키지
 
 - [ ] **Step 1: bin 엔트리 작성** — `#!/usr/bin/env node`, `detectTheme(process.argv, process.env)` 후 `render(<App initialTheme={...}/>)`. 종료 시 터미널 상태 복원(Ink 기본 + SIGINT 핸들러).
 
-- [ ] **Step 2: 배포 빌드 구성** — client 패키지에 `tsup` 추가: `tsup src/index.tsx --format esm --bundle` 로 core/server를 포함한 단일 `dist/index.js` 생성(외부 deps는 ink/react만 dependencies로 유지). `package.json`: `"name": "card-night"`, `"bin": {"card-night": "dist/index.js"}`, `"files": ["dist"]`, `"engines": {"node": ">=22"}`. 검증: `npm run build && npm pack --dry-run -w packages/client` 후 다른 임시 디렉토리에서 `npm i -g <tarball>` → `card-night` 실행.
+- [ ] **Step 2: 배포 빌드 구성** — client 패키지에 `tsup` 추가: `tsup src/index.tsx --format esm --bundle` 로 core/server를 포함한 단일 `dist/index.js` 생성(외부 deps는 ink/react만 dependencies로 유지). `package.json`: `"name": "soft-puzzle"`, `"bin": {"soft-puzzle": "dist/index.js"}`, `"files": ["dist"]`, `"engines": {"node": ">=22"}`. 검증: `npm run build && npm pack --dry-run -w packages/client` 후 다른 임시 디렉토리에서 `npm i -g <tarball>` → `soft-puzzle` 실행.
 
-- [ ] **Step 3: README 작성** — 설치(`npm i -g card-night` 또는 git URL), 실행법, `--ascii` 옵션, 방화벽 안내(첫 실행 시 네트워크 허용 필요), 게임 3종 조작키 표.
+- [ ] **Step 3: README 작성** — 설치(`npm i -g soft-puzzle` 또는 git URL), 실행법, `--ascii` 옵션, 방화벽 안내(첫 실행 시 네트워크 허용 필요), 게임 3종 조작키 표.
 
 - [ ] **Step 4: 수동 테스트 체크리스트 작성 및 1회 수행** — `docs/manual-test-checklist.md`: mac Terminal / Windows Terminal / 구형 PowerShell(conhost) 각각에서 — 실행·한글 표시·아트 렌더(`--ascii` 자동/수동)·방 발견·IP 폴백·게임 3종 각 1판·타임아웃 자동 처리·참가자 강제 종료·호스트 강제 종료 항목. 가능한 환경에서 수행하고 결과(환경·날짜·통과 여부)를 문서 하단에 기록.
 
-- [ ] **Step 5: 최종 회귀 + Commit** — Run: `npm test && npm run typecheck && npm run build`. Expected: 전부 PASS. `git commit -m "feat: card-night bin 엔트리와 npm 패키지 구성"`
+- [ ] **Step 5: 최종 회귀 + Commit** — Run: `npm test && npm run typecheck && npm run build`. Expected: 전부 PASS. `git commit -m "feat: soft-puzzle bin 엔트리와 npm 패키지 구성"`
 
 ---
 

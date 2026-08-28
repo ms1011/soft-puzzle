@@ -3,8 +3,8 @@ import net from 'node:net';
 import { Room } from '../src/room.js';
 import { startServer } from '../src/server.js';
 import type { RunningServer } from '../src/server.js';
-import { encodeMsg, NdjsonDecoder } from '@card-night/core';
-import type { ClientMsg, ServerMsg, GameId } from '@card-night/core';
+import { encodeMsg, NdjsonDecoder } from '@soft-puzzle/core';
+import type { ClientMsg, ServerMsg, GameId } from '@soft-puzzle/core';
 
 type StateMsg = Extract<ServerMsg, { type: 'state' }>;
 type EventMsg = Extract<ServerMsg, { type: 'event' }>;

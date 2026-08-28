@@ -22,6 +22,6 @@ const instance = render(<App initialTheme={theme} />);
 // waitUntilExit()의 프라미스가 reject된다. 여기서 잡지 않으면 unhandledRejection으로
 // 새어나가 사용자에게 스택 트레이스만 던지고 끝나므로, 최소한의 안내와 종료 코드를 남긴다.
 instance.waitUntilExit().catch((err: unknown) => {
-  console.error('[card-night] 예기치 않은 오류로 종료되었습니다:', err);
+  console.error('[soft-puzzle] 예기치 않은 오류로 종료되었습니다:', err);
   process.exitCode = 1;
 });

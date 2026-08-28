@@ -1,6 +1,6 @@
 import net from 'node:net';
-import { encodeMsg, NdjsonDecoder } from '@card-night/core';
-import type { ClientMsg, ServerMsg } from '@card-night/core';
+import { encodeMsg, NdjsonDecoder } from '@soft-puzzle/core';
+import type { ClientMsg, ServerMsg } from '@soft-puzzle/core';
 
 type JoinErrorMsg = Extract<ServerMsg, { type: 'error' }>;
 type JoinedMsg = Extract<ServerMsg, { type: 'joined' }>;

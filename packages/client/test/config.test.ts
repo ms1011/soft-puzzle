@@ -9,28 +9,28 @@ describe('config', () => {
   let originalEnv: string | undefined;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'card-night-config-'));
-    originalEnv = process.env.CARD_NIGHT_CONFIG;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soft-puzzle-config-'));
+    originalEnv = process.env.SOFT_PUZZLE_CONFIG;
     // 부모 디렉터리가 아직 없는 경로를 일부러 골라 자동 생성 여부도 함께 검증한다.
-    process.env.CARD_NIGHT_CONFIG = path.join(dir, 'nested', '.card-night.json');
+    process.env.SOFT_PUZZLE_CONFIG = path.join(dir, 'nested', '.soft-puzzle.json');
   });
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env.CARD_NIGHT_CONFIG;
-    else process.env.CARD_NIGHT_CONFIG = originalEnv;
+    if (originalEnv === undefined) delete process.env.SOFT_PUZZLE_CONFIG;
+    else process.env.SOFT_PUZZLE_CONFIG = originalEnv;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('configPath()는 CARD_NIGHT_CONFIG 환경변수를 매 호출마다 반영한다', () => {
-    expect(configPath()).toBe(process.env.CARD_NIGHT_CONFIG);
+  it('configPath()는 SOFT_PUZZLE_CONFIG 환경변수를 매 호출마다 반영한다', () => {
+    expect(configPath()).toBe(process.env.SOFT_PUZZLE_CONFIG);
     const other = path.join(dir, 'other.json');
-    process.env.CARD_NIGHT_CONFIG = other;
+    process.env.SOFT_PUZZLE_CONFIG = other;
     expect(configPath()).toBe(other);
   });
 
-  it('환경변수가 없으면 홈 디렉터리의 .card-night.json을 가리킨다', () => {
-    delete process.env.CARD_NIGHT_CONFIG;
-    expect(configPath()).toBe(path.join(os.homedir(), '.card-night.json'));
+  it('환경변수가 없으면 홈 디렉터리의 .soft-puzzle.json을 가리킨다', () => {
+    delete process.env.SOFT_PUZZLE_CONFIG;
+    expect(configPath()).toBe(path.join(os.homedir(), '.soft-puzzle.json'));
   });
 
   it('파일이 없으면 loadConfig()는 빈 객체를 돌려준다', () => {
@@ -46,7 +46,7 @@ describe('config', () => {
   it('saveConfig는 임시 파일을 남기지 않는다', () => {
     saveConfig({ nickname: '홍길동' });
     const files = fs.readdirSync(path.dirname(configPath()));
-    expect(files).toEqual(['.card-night.json']);
+    expect(files).toEqual(['.soft-puzzle.json']);
   });
 
   it('빈 파일이면 {}를 돌려준다', () => {

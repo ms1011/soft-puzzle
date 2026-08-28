@@ -1,12 +1,21 @@
+import { StringDecoder } from 'node:string_decoder';
+
 export function encodeMsg(msg: object): string {
   return JSON.stringify(msg) + '\n';
 }
 
 export class NdjsonDecoder {
   private buf: string = '';
+  private decoder: StringDecoder;
+
+  constructor() {
+    this.decoder = new StringDecoder('utf8');
+  }
 
   push(chunk: Buffer | string): unknown[] {
-    this.buf += chunk.toString();
+    // Use StringDecoder to properly handle multi-byte UTF-8 sequences split across chunks
+    const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    this.buf += text;
     const lines = this.buf.split('\n');
     // Keep the last incomplete line (if buf doesn't end with \n)
     this.buf = lines[lines.length - 1];

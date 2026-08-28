@@ -3,3 +3,6 @@ export { Room } from './room.js';
 
 export type { RunningServer } from './server.js';
 export { startServer } from './server.js';
+
+export type { RunningDiscovery } from './discovery.js';
+export { startDiscovery } from './discovery.js';

@@ -1,4 +1,5 @@
 import type { Theme } from './theme.js';
+import { displayWidth } from './width.js';
 
 type DieValue = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -88,19 +89,27 @@ export function renderDie(value: DieValue, held: boolean, theme: Theme): string[
   return [top, contentRows[0], contentRows[1], contentRows[2], bottom];
 }
 
+// 표시 폭(칼럼) 기준으로 가운데 정렬한다. 코드포인트 개수로 재면 한글이 섞인
+// 라벨('[잡음]')의 패딩이 실제 칼럼 수보다 부족해져 뒤따르는 주사위 라벨이
+// 오른쪽으로 밀린다 — displayWidth()가 한글 음절을 2칼럼으로 센다.
 function centerLabel(str: string, width: number): string {
-  const len = [...str].length;
-  const pad = Math.max(0, width - len);
+  const w = displayWidth(str);
+  const pad = Math.max(0, width - w);
   const left = Math.floor(pad / 2);
   const right = pad - left;
   return ' '.repeat(left) + str + ' '.repeat(right);
 }
 
+const HELD_LABEL_UNICODE = '[잡음]';
+// ascii 테마는 구형 콘솔(conhost) 대상이므로 라벨도 순수 ASCII여야 한다 — 한글을
+// 그대로 쓰면 renderCard/renderDie와 달리 renderDice만 ascii 순수성이 깨진다.
+const HELD_LABEL_ASCII = '[HELD]';
+
 /**
  * 주사위 여러 개를 가로로 나란히(칸 사이 공백 1칸) 그리고, 그 아래 한 줄에
- * 라벨을 붙인다: 홀드되지 않은 주사위는 면 값 숫자, 홀드된 주사위는 '[잡음]'.
- * 반환은 항상 6줄(주사위 아트 5줄 + 라벨 1줄). 빈 배열이면 예외 없이 6줄의
- * 빈 문자열을 돌려준다.
+ * 라벨을 붙인다: 홀드되지 않은 주사위는 면 값 숫자, 홀드된 주사위는 '[잡음]'
+ * (ascii 테마에서는 '[HELD]'). 반환은 항상 6줄(주사위 아트 5줄 + 라벨 1줄).
+ * 빈 배열이면 예외 없이 6줄의 빈 문자열을 돌려준다.
  */
 export function renderDice(values: number[], held: boolean[], theme: Theme): string[] {
   if (values.length === 0) {
@@ -113,7 +122,8 @@ export function renderDice(values: number[], held: boolean[], theme: Theme): str
     lines.push(dice.map((d) => d[row]).join(' '));
   }
 
-  const labels = values.map((v, i) => (held[i] ? '[잡음]' : String(v)));
+  const heldLabel = theme.unicode ? HELD_LABEL_UNICODE : HELD_LABEL_ASCII;
+  const labels = values.map((v, i) => (held[i] ? heldLabel : String(v)));
   lines.push(labels.map((l) => centerLabel(l, DIE_WIDTH)).join(' '));
 
   return lines;

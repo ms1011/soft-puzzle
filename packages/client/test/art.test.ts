@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderCard, renderHand } from '../src/art/cards.js';
 import { renderDie, renderDice } from '../src/art/dice.js';
 import { detectTheme } from '../src/art/theme.js';
+import { displayWidth } from '../src/art/width.js';
 
 const UNICODE = { unicode: true };
 const ASCII = { unicode: false };
@@ -138,6 +139,13 @@ describe('dice', () => {
     expect(art[3]).toBe('│     ● │');
   });
 
+  it('4는 네 모서리', () => {
+    const art = renderDie(4, false, UNICODE);
+    expect(art[1]).toBe('│ ●   ● │');
+    expect(art[2]).toBe('│       │');
+    expect(art[3]).toBe('│ ●   ● │');
+  });
+
   it('6은 좌우 두 열(세 줄 모두)', () => {
     const art = renderDie(6, false, UNICODE);
     expect(art[1]).toBe('│ ●   ● │');
@@ -162,6 +170,20 @@ describe('dice', () => {
     expect(art[5]).toContain('3');
     expect(art[5]).toContain('[잡음]');
     expect(art[5]).not.toContain('6'); // 홀드된 주사위는 숫자 대신 [잡음] 라벨
+  });
+
+  it('ascii 테마의 renderDice에는 비ASCII 문자가 없다 (홀드 라벨 포함)', () => {
+    const art = renderDice([3, 6], [false, true], ASCII);
+    const all = art.join('');
+    expect(/^[\x20-\x7e]*$/.test(all)).toBe(true);
+    expect(all).not.toContain('잡음');
+    expect(art[5]).toContain('[HELD]');
+  });
+
+  it('renderDice 라벨 줄은 실제 표시 폭 기준으로 아트 줄과 정렬된다', () => {
+    const art = renderDice([3, 6], [false, true], UNICODE);
+    expect(displayWidth(art[0])).toBe(19); // 9+1(구분)+9, 아트 줄은 전부 좁은 문자
+    expect(displayWidth(art[5])).toBe(19); // 라벨 줄도 칼럼 기준으로는 동일해야 함
   });
 
   it('renderDice: 빈 배열이면 던지지 않는다', () => {

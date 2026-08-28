@@ -1,22 +1,31 @@
 {
   "name": "card-night",
-  "private": true,
+  "version": "0.1.0",
+  "description": "터미널에서 즐기는 LAN 카드게임(블랙잭·원카드·야추) 파티 게임",
   "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "bin": {
+    "card-night": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
-    "@card-night/core": "*",
-    "@card-night/server": "*",
     "ink": "^5",
-    "react": "^18",
-    "ink-text-input": "^6"
+    "ink-text-input": "^6",
+    "react": "^18"
   },
   "devDependencies": {
+    "@card-night/core": "*",
+    "@card-night/server": "*",
     "ink-testing-library": "^4",
-    "@types/react": "^18"
+    "@types/react": "^18",
+    "tsup": "^8.5.1"
   },
   "scripts": {
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
   }
 }

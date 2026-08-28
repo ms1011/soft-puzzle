@@ -5,7 +5,8 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --build packages/core packages/server packages/client"
+    "typecheck": "tsc --build packages/core packages/server packages/client",
+    "build": "npm run build -w packages/client"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

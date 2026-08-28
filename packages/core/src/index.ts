@@ -14,3 +14,7 @@ export {
 } from './protocol.js';
 
 export { encodeMsg, NdjsonDecoder } from './ndjson.js';
+
+export type { EngineEvent, EngineAction, GameEngine } from './engine.js';
+
+export { handValue, BlackjackEngine } from './games/blackjack.js';

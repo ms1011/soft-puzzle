@@ -1,0 +1,389 @@
+import { describe, it, expect } from 'vitest';
+import { Room } from '../src/room.js';
+import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS } from '@card-night/core';
+import type { ServerMsg, GameId } from '@card-night/core';
+
+type StateMsg = Extract<ServerMsg, { type: 'state' }>;
+type EventMsg = Extract<ServerMsg, { type: 'event' }>;
+
+function setup(opts?: { game?: GameId; host?: string; seed?: number; name?: string }) {
+  let t = 0;
+  const room = new Room({
+    name: opts?.name ?? '철수의 방',
+    game: opts?.game ?? 'blackjack',
+    host: opts?.host ?? '철수',
+    rng: mulberry32(opts?.seed ?? 7),
+    now: () => t,
+  });
+  const sent: Record<string, ServerMsg[]> = {};
+  room.onSend((nick, msg) => {
+    (sent[nick] ??= []).push(msg);
+  });
+  return {
+    room,
+    sent,
+    tick: (ms: number) => {
+      t += ms;
+      room.checkTimeout();
+    },
+  };
+}
+
+function lastState(msgs: ServerMsg[] | undefined): StateMsg {
+  const states = (msgs ?? []).filter((m): m is StateMsg => m.type === 'state');
+  if (states.length === 0) throw new Error('no state messages received');
+  return states[states.length - 1];
+}
+
+function events(msgs: ServerMsg[] | undefined): EventMsg[] {
+  return (msgs ?? []).filter((m): m is EventMsg => m.type === 'event');
+}
+
+/** 2인 블랙잭을 베팅 → (필요시) 액션까지 진행시켜 settle 단계로 보낸다. */
+function advanceToSettle(room: Room, players: string[], bets: number[]) {
+  players.forEach((p, i) => room.handleMessage(p, { type: 'action', name: 'bet', arg: bets[i] }));
+  // 자연 블랙잭으로 자동 완료된 사람에게 stand를 걸어도 엔진이 무시하므로, 순서 상관없이
+  // 두 차례 훑어주면 전원이 acting을 끝내고 settle에 도달한다(core의 자체 테스트와 동일한 패턴).
+  for (const p of players) room.handleMessage(p, { type: 'action', name: 'stand' });
+  for (const p of players) room.handleMessage(p, { type: 'action', name: 'stand' });
+}
+
+describe('Room — lobby', () => {
+  it('① join 후 전원이 lobby state를 받는다', () => {
+    const { room, sent } = setup();
+    expect(room.join('철수')).toEqual({ ok: true });
+    expect(room.join('영희')).toEqual({ ok: true });
+
+    const s1 = lastState(sent['철수']);
+    const s2 = lastState(sent['영희']);
+    expect(s1.phase).toBe('lobby');
+    expect(s2.phase).toBe('lobby');
+    expect(s1.room.players).toEqual(['철수', '영희']);
+    expect(s2.room.players).toEqual(['철수', '영희']);
+    expect(s1.room.host).toBe('철수');
+  });
+
+  it('② 7번째 join은 {ok:false, code:"full"}', () => {
+    const { room } = setup();
+    for (let i = 0; i < MAX_PLAYERS; i++) {
+      expect(room.join(`p${i}`)).toEqual({ ok: true });
+    }
+    expect(room.join('p6')).toEqual({ ok: false, code: 'full' });
+  });
+
+  it('③ 닉네임 중복은 {ok:false, code:"dup"}', () => {
+    const { room } = setup();
+    room.join('철수');
+    expect(room.join('철수')).toEqual({ ok: false, code: 'dup' });
+  });
+
+  it('게임이 시작된 뒤 join은 {ok:false, code:"playing"}', () => {
+    const { room } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    expect(room.join('민수')).toEqual({ ok: false, code: 'playing' });
+  });
+
+  it('④ host가 아닌 사람의 start는 무시되고, 그 사람에게만 사유가 안내된다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('영희', { type: 'action', name: 'start' });
+
+    expect(lastState(sent['영희']).phase).toBe('lobby');
+    const evs = events(sent['영희']);
+    expect(evs.length).toBeGreaterThan(0);
+    expect(evs[evs.length - 1].text).toContain('방장');
+    // 다른 사람에게는 사유 안내가 가지 않는다
+    expect(events(sent['철수']).length).toBe(0);
+  });
+
+  it('인원이 minPlayers 미만이면 host의 start도 무시되고 사유가 안내된다', () => {
+    const { room, sent } = setup(); // blackjack: minPlayers=2
+    room.join('철수');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    expect(lastState(sent['철수']).phase).toBe('lobby');
+    const evs = events(sent['철수']);
+    expect(evs.length).toBeGreaterThan(0);
+  });
+
+  it('leave: lobby에서는 명단에서 제거되고 남은 인원에게 상태가 브로드캐스트된다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.leave('영희');
+    expect(lastState(sent['철수']).room.players).toEqual(['철수']);
+  });
+});
+
+describe('Room — playing/turn timer', () => {
+  it('시작 후 각자 받은 state.view가 다르다 — 정보 격리(블랙잭: 내 hand만 카드, 상대는 handCount)', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    const v1 = lastState(sent['철수']).view as any;
+    const v2 = lastState(sent['영희']).view as any;
+    expect(v1.you.hand.length).toBe(0); // betting 단계라 아직 카드 없음(문서화된 동작)
+    expect(v1.phase).toBe('betting');
+    expect(v2.phase).toBe('betting');
+
+    room.handleMessage('철수', { type: 'action', name: 'bet', arg: 100 });
+    room.handleMessage('영희', { type: 'action', name: 'bet', arg: 50 });
+
+    const w1 = lastState(sent['철수']).view as any;
+    const w2 = lastState(sent['영희']).view as any;
+    expect(w1.you.hand.length).toBe(2);
+    expect(w2.you.hand.length).toBe(2);
+    // 서로 상대의 hand 카드 배열은 볼 수 없고 handCount만 볼 수 있다(블랙잭은 원래 공개 게임이라
+    // others[].hand 자체는 존재하지만, 그것과 별개로 각자의 view.you는 반드시 자기 자신 기준이다).
+    expect(w1.others[0].nickname).toBe('영희');
+    expect(w1.others[0].handCount).toBe(2);
+    expect(w1.you.hand).not.toEqual(w2.you.hand);
+  });
+
+  it('⑤ 원카드 방에서는 상대 카드 문자열이 state·event 어디에도 유출되지 않는다', () => {
+    const { room, sent } = setup({ game: 'onecard', seed: 3 });
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    // 항상 유효한 draw만 번갈아 호출해 이벤트/상태 메시지를 여러 번 만든다(turn 순서: 철수→영희).
+    for (let i = 0; i < 4; i++) {
+      room.handleMessage('철수', { type: 'action', name: 'draw' });
+      room.handleMessage('영희', { type: 'action', name: 'draw' });
+    }
+
+    const younghuiHand = (lastState(sent['영희']).view as any).you.hand as string[];
+    expect(younghuiHand.length).toBeGreaterThan(0);
+
+    const cheolsuMessages = JSON.stringify(sent['철수']);
+    for (const card of younghuiHand) {
+      expect(cheolsuMessages).not.toContain(`"${card}"`);
+    }
+
+    const cheolsuHand = (lastState(sent['철수']).view as any).you.hand as string[];
+    const younghuiMessages = JSON.stringify(sent['영희']);
+    for (const card of cheolsuHand) {
+      expect(younghuiMessages).not.toContain(`"${card}"`);
+    }
+  });
+
+  it('⑥ fake clock을 90초 넘겨 checkTimeout()을 호출하면 자동 처리 event가 나간다', () => {
+    const { room, sent, tick } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    tick(TURN_TIMEOUT_MS + 1);
+
+    const evs = events(sent['철수']).map((e) => e.text);
+    expect(evs.some((t) => t.includes('시간 초과'))).toBe(true);
+    // betting 단계에서 자동 최소 베팅이 적용되었어야 한다
+    const view = lastState(sent['철수']).view as any;
+    expect(view.you.bet).toBeGreaterThan(0);
+  });
+
+  it('checkTimeout은 데드라인 전에는 아무 것도 하지 않는다', () => {
+    const { room, sent, tick } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    tick(TURN_TIMEOUT_MS - 1);
+    expect(events(sent['철수']).some((e) => e.text.includes('시간 초과'))).toBe(false);
+  });
+
+  it('checkTimeout은 lobby/result 단계 및 게임이 없을 때도 안전하다', () => {
+    const { room, sent, tick } = setup();
+    room.join('철수');
+    expect(() => tick(TURN_TIMEOUT_MS + 1)).not.toThrow();
+    expect(events(sent['철수']).length).toBe(0);
+  });
+
+  it('⑦ 게임 종료 시 result state가 전달되고, host의 replay로 다시 playing이 된다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    advanceToSettle(room, ['철수', '영희'], [100, 50]);
+
+    room.handleMessage('철수', { type: 'action', name: 'endGame' });
+    const resultState = lastState(sent['철수']);
+    expect(resultState.phase).toBe('result');
+    expect(resultState.result).toBeDefined();
+    expect(resultState.result!.ranking.length).toBe(2);
+
+    room.handleMessage('철수', { type: 'action', name: 'replay' });
+    expect(lastState(sent['철수']).phase).toBe('playing');
+    expect(lastState(sent['철수']).room.host).toBe('철수');
+  });
+
+  it('result에서 host의 toLobby로 phase가 lobby로 돌아간다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    advanceToSettle(room, ['철수', '영희'], [100, 50]);
+    room.handleMessage('철수', { type: 'action', name: 'endGame' });
+    expect(lastState(sent['철수']).phase).toBe('result');
+
+    room.handleMessage('철수', { type: 'action', name: 'toLobby' });
+    expect(lastState(sent['철수']).phase).toBe('lobby');
+  });
+
+  it('무효 액션은 상태를 변경하지 않는다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    const before = JSON.stringify(lastState(sent['철수']));
+    const beforeCount = (sent['철수'] ?? []).length;
+
+    room.handleMessage('철수', { type: 'action', name: 'bet', arg: -5 }); // 유효하지 않은 베팅
+
+    expect(JSON.stringify(lastState(sent['철수']))).toBe(before);
+    expect((sent['철수'] ?? []).length).toBe(beforeCount); // 새 메시지가 아예 안 나갔다
+  });
+
+  it('방에 없는 사람이 보낸 액션은 무시되고 상태를 바꾸지 않는다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    const before = JSON.stringify(lastState(sent['철수']));
+
+    expect(() => room.handleMessage('침입자', { type: 'action', name: 'bet', arg: 100 })).not.toThrow();
+
+    expect(JSON.stringify(lastState(sent['철수']))).toBe(before);
+    expect(sent['침입자']).toBeUndefined();
+  });
+
+  it('알 수 없는/기형 메시지를 받아도 예외 없이 무시한다', () => {
+    const { room } = setup();
+    room.join('철수');
+    expect(() => room.handleMessage('철수', null as unknown as never)).not.toThrow();
+    expect(() => room.handleMessage('철수', {} as unknown as never)).not.toThrow();
+    expect(() => room.handleMessage('철수', { type: 'action' } as unknown as never)).not.toThrow();
+    expect(() => room.handleMessage('철수', { type: 'unknown-type' } as unknown as never)).not.toThrow();
+    expect(() => room.handleMessage('없는사람', { type: 'chat', text: 'hi' })).not.toThrow();
+  });
+
+  it('chat은 "[닉네임] 텍스트" 형식의 event로 전원에게 브로드캐스트된다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'chat', text: 'ㄱㄱ' });
+
+    const ev = events(sent['영희']);
+    expect(ev[ev.length - 1].text).toBe('[철수] ㄱㄱ');
+    const evSelf = events(sent['철수']);
+    expect(evSelf[evSelf.length - 1].text).toBe('[철수] ㄱㄱ');
+  });
+
+  it('leave: playing 중 이탈(host 아님)하면 engine 이벤트와 새 state가 브로드캐스트되고 게임은 계속된다', () => {
+    const { room, sent } = setup({ game: 'onecard' });
+    room.join('철수');
+    room.join('영희');
+    room.join('민수');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    room.leave('민수');
+
+    const evs = events(sent['철수']).map((e) => e.text);
+    expect(evs.some((t) => t.includes('민수') && t.includes('떠났습니다'))).toBe(true);
+    expect(lastState(sent['철수']).room.players).toEqual(['철수', '영희']);
+    expect(lastState(sent['철수']).phase).toBe('playing');
+  });
+});
+
+describe('Room — info()', () => {
+  it(`info()는 "n/${MAX_PLAYERS}" 형식의 인원수를 보고한다`, () => {
+    const { room } = setup({ name: '영희의 방' });
+    room.join('철수');
+    room.join('영희');
+    const info = room.info();
+    expect(info.room).toBe('영희의 방');
+    expect(info.game).toBe('blackjack');
+    expect(info.players).toBe(`2/${MAX_PLAYERS}`);
+  });
+});
+
+describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아야 한다)', () => {
+  it('host가 게임 중 이탈하면 가장 오래 남아있는 플레이어가 새 host가 되고, 그 사람의 replay가 허용된다', () => {
+    const { room, sent } = setup();
+    room.join('철수'); // host
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    advanceToSettle(room, ['철수', '영희'], [100, 50]);
+    expect((lastState(sent['영희']).view as any).phase).toBe('settle');
+
+    // host(철수)가 이탈 — 2명 중 1명만 남으므로 블랙잭 엔진이 스스로 게임을 종료 처리한다.
+    room.leave('철수');
+
+    const evs = events(sent['영희']).map((e) => e.text);
+    expect(evs.some((t) => t.includes('철수') && t.includes('떠났습니다'))).toBe(true);
+    expect(evs.some((t) => t.includes('영희') && t.includes('방장'))).toBe(true);
+
+    const state = lastState(sent['영희']);
+    expect(state.room.host).toBe('영희');
+    expect(state.room.players).toEqual(['영희']);
+    expect(state.phase).toBe('result');
+
+    // 새 host(영희)의 replay가 정상적으로 받아들여진다.
+    room.handleMessage('영희', { type: 'action', name: 'replay' });
+    const replayed = lastState(sent['영희']);
+    expect(replayed.phase).toBe('playing');
+    expect(replayed.room.host).toBe('영희');
+  });
+
+  it('host가 자신의 턴 도중 이탈해도 예외 없이 처리되고 게임이 스스로 종료된다', () => {
+    const { room, sent } = setup();
+    room.join('철수'); // host
+    room.join('영희');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    room.handleMessage('철수', { type: 'action', name: 'bet', arg: 100 });
+    room.handleMessage('영희', { type: 'action', name: 'bet', arg: 50 });
+
+    let v = lastState(sent['철수']).view as any;
+    if (v.phase === 'acting' && v.others[0].isTurn) {
+      // 영희 턴이 먼저라면 stand로 넘겨 철수 턴으로 만든다.
+      room.handleMessage('영희', { type: 'action', name: 'stand' });
+    }
+    // (드물게 둘 다 자연 블랙잭이면 이미 acting을 벗어나 있을 수 있다 — 그래도 leave는 안전해야 한다.)
+
+    expect(() => room.leave('철수')).not.toThrow(); // 자신의 턴 도중(혹은 그 직후) host 이탈
+
+    // 2명 중 1명만 남았으므로 엔진이 스스로 게임을 종료 처리하고, 새 host(영희)가 정상적으로 안내된다.
+    expect(lastState(sent['영희']).room.host).toBe('영희');
+    expect(lastState(sent['영희']).phase).toBe('result');
+  });
+
+  it(
+    '남은 플레이어가 2명 이상이면 host 이탈로도 게임이 계속되지만, ' +
+      '이미 실행 중인 블랙잭 엔진 인스턴스는 새 host의 endGame을 인정하지 않는다 ' +
+      '(GameEngine에 host를 갱신하는 API가 없는 core의 한계 — 리포트 참고)',
+    () => {
+      const { room, sent } = setup();
+      room.join('철수'); // host
+      room.join('영희');
+      room.join('민수');
+      room.handleMessage('철수', { type: 'action', name: 'start' });
+      advanceToSettle(room, ['철수', '영희', '민수'], [100, 50, 50]);
+      expect((lastState(sent['영희']).view as any).phase).toBe('settle');
+
+      room.leave('철수'); // host 이탈, 2명(영희·민수) 남아 게임은 계속된다.
+
+      const afterLeave = lastState(sent['영희']);
+      expect(afterLeave.room.host).toBe('영희'); // Room 차원에서는 정상적으로 재할당됨
+      expect(afterLeave.phase).toBe('playing'); // 아직 진행 중(2명 남음, order.length>1)
+
+      room.handleMessage('영희', { type: 'action', name: 'endGame' });
+
+      // 엔진 내부의 host 필드는 start() 시점에 '철수'로 고정된 채이므로 doEndGame이 거부한다.
+      expect(lastState(sent['영희']).phase).toBe('playing'); // result로 넘어가지 못했다
+    },
+  );
+});

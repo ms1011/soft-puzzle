@@ -133,6 +133,9 @@ export class OneCardEngine implements GameEngine {
     this.drawPile = deck;
   }
 
+  // 원카드에는 host 게이팅 액션이 없다(start()의 host 인자도 무시한다) — no-op.
+  setHost(_host: string): void {}
+
   /** @internal 테스트 전용 — 결정적 시나리오 구성을 위해 손패와 top을 직접 지정한다. 공개 API 아님. */
   setHands(hands: Map<string, Card[]>, top: Card): void {
     for (const [p, cards] of hands) {

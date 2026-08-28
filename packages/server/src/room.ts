@@ -94,6 +94,11 @@ export class Room {
       // players는 join한 순서 그대로 유지되므로(제거만 하고 재정렬하지 않음), 맨 앞이
       // "가장 오래 남아있는" 플레이어다.
       this.host = this.players[0];
+      // 게임이 실행 중(엔진이 존재)이면 엔진에도 새 host를 반영한다 — 그래야 블랙잭처럼
+      // host 게이팅 액션(endGame)이 있는 엔진이 새 host를 인정한다. 방금 이 leave() 호출로
+      // 막 끝난 엔진이라도 host 필드를 갱신하는 것 자체는 다른 어떤 상태(seats/order/턴 등)에도
+      // 영향을 주지 않으므로 안전하다 — announce 전에 먼저 반영해 방송되는 state가 이미 참이 되게 한다.
+      this.engine?.setHost(this.host);
       this.broadcastEvents([{ text: `${this.host}님이 새 방장이 되었습니다.` }]);
     }
 

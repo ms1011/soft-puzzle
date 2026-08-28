@@ -14,6 +14,8 @@ export interface GameEngine {
   readonly game: GameId;
   readonly minPlayers: number;
   start(players: string[], host: string, rng: Rng): void;
+  setHost(host: string): void; // 세션 계층(Room)의 host 재할당을 엔진에 반영 — host 게이팅 액션이
+  // 있는 엔진(블랙잭의 endGame)이 새 host를 인정하게 한다. host 개념이 없는 엔진은 no-op으로 구현한다.
   handleAction(player: string, action: EngineAction): EngineEvent[]; // 무효 액션이면 [] 반환, 상태 불변
   getViewFor(player: string): GameView;
   pendingPlayers(): string[]; // 지금 입력을 기다리는 플레이어들

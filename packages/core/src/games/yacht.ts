@@ -179,6 +179,9 @@ export class YachtEngine implements GameEngine {
     this.beginTurn();
   }
 
+  // 야추에는 host 게이팅 액션이 없다(start()의 host 인자도 무시한다) — no-op.
+  setHost(_host: string): void {}
+
   private rollDie(): number {
     return Math.floor(this.rng() * 6) + 1;
   }

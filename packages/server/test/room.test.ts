@@ -361,12 +361,36 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
     expect(lastState(sent['영희']).phase).toBe('result');
   });
 
+  it('남은 플레이어가 2명 이상이어도, 승격된 새 host의 endGame이 이미 실행 중인 엔진에 받아들여진다', () => {
+    const { room, sent } = setup();
+    room.join('철수'); // host
+    room.join('영희');
+    room.join('민수');
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    advanceToSettle(room, ['철수', '영희', '민수'], [100, 50, 50]);
+    expect((lastState(sent['영희']).view as any).phase).toBe('settle');
+
+    room.leave('철수'); // host 이탈, 2명(영희·민수) 남아 게임은 계속된다.
+
+    const afterLeave = lastState(sent['영희']);
+    expect(afterLeave.room.host).toBe('영희'); // Room 차원에서 재할당됨
+    expect(afterLeave.phase).toBe('playing'); // 아직 진행 중(2명 남음, order.length>1)
+
+    room.handleMessage('영희', { type: 'action', name: 'endGame' });
+
+    // Room이 host 재할당과 동시에 engine.setHost(새 host)를 호출하므로, 이미 실행 중이던
+    // 엔진도 새 host를 인정한다 — 승격된 host의 endGame이 이제 받아들여진다.
+    const finalState = lastState(sent['영희']);
+    expect(finalState.phase).toBe('result');
+    expect(finalState.result).toBeDefined();
+  });
+
   it(
-    '남은 플레이어가 2명 이상이면 host 이탈로도 게임이 계속되지만, ' +
-      '이미 실행 중인 블랙잭 엔진 인스턴스는 새 host의 endGame을 인정하지 않는다 ' +
-      '(GameEngine에 host를 갱신하는 API가 없는 core의 한계 — 리포트 참고)',
+    'Task 4 시나리오 전체: 원래 host가 없는 채로 settle→ready→betting(→acting)→settle이 ' +
+      '타임아웃만으로 최소 한 바퀴 굴러가도(=아무도 못 끝내는 무한 순환이 실제로 재현됨), ' +
+      '승격된 새 host의 endGame으로 그 순환을 확실히 탈출할 수 있다',
     () => {
-      const { room, sent } = setup();
+      const { room, sent, tick } = setup();
       room.join('철수'); // host
       room.join('영희');
       room.join('민수');
@@ -374,16 +398,28 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
       advanceToSettle(room, ['철수', '영희', '민수'], [100, 50, 50]);
       expect((lastState(sent['영희']).view as any).phase).toBe('settle');
 
-      room.leave('철수'); // host 이탈, 2명(영희·민수) 남아 게임은 계속된다.
+      room.leave('철수'); // host 이탈 — 이 라운드가 도는 동안 원래 host는 더 이상 없다.
+      expect(lastState(sent['영희']).room.host).toBe('영희');
+      expect(lastState(sent['영희']).phase).toBe('playing'); // 2명 남아 게임은 계속된다
 
-      const afterLeave = lastState(sent['영희']);
-      expect(afterLeave.room.host).toBe('영희'); // Room 차원에서는 정상적으로 재할당됨
-      expect(afterLeave.phase).toBe('playing'); // 아직 진행 중(2명 남음, order.length>1)
+      // 아무도 endGame을 부르지 않은 채 타임아웃만으로 순환이 실제로 굴러가는지 확인한다 —
+      // 최소 한 번은 settle을 벗어났다가(ready→betting[→acting]) 다시 settle로 돌아와야 한다.
+      // 이것이 Task 4 리뷰가 지적한 "host 없이는 영원히 도는" 바로 그 경로다.
+      let leftSettleOnce = false;
+      let backInSettle = false;
+      for (let i = 0; i < 8 && !backInSettle; i++) {
+        tick(TURN_TIMEOUT_MS + 1);
+        const phase = (lastState(sent['영희']).view as any).phase as string;
+        if (phase !== 'settle') leftSettleOnce = true;
+        if (leftSettleOnce && phase === 'settle') backInSettle = true;
+      }
+      expect(leftSettleOnce).toBe(true);
+      expect(backInSettle).toBe(true);
+      expect(lastState(sent['영희']).phase).toBe('playing'); // Room 차원에서는 아직 끝나지 않았다
 
+      // 승격된 새 host(영희)만이 이 순환을 끝낼 수 있다 — 그리고 이제는 받아들여진다.
       room.handleMessage('영희', { type: 'action', name: 'endGame' });
-
-      // 엔진 내부의 host 필드는 start() 시점에 '철수'로 고정된 채이므로 doEndGame이 거부한다.
-      expect(lastState(sent['영희']).phase).toBe('playing'); // result로 넘어가지 못했다
+      expect(lastState(sent['영희']).phase).toBe('result');
     },
   );
 });

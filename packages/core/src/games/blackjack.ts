@@ -100,6 +100,11 @@ export class BlackjackEngine implements GameEngine {
     this.beginBettingRound();
   }
 
+  /** 세션 계층(Room)이 host를 재할당했을 때 반영한다 — endGame 게이트가 새 host를 인정하게 한다. */
+  setHost(host: string): void {
+    this.host = host;
+  }
+
   /**
    * 새 베팅 라운드를 연다. 최소 베팅(10)조차 할 수 없는 시트는 이번 라운드 관전으로
    * 돌린다 — "칩 0" 만으로 판정하면, 어중간하게 1~9칩만 남은 시트가 betting에서

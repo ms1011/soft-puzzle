@@ -95,28 +95,57 @@ export class BlackjackEngine implements GameEngine {
     this.ready = new Set();
     this.finished = false;
     this.finalResult = null;
+    // start()는 이벤트를 반환할 수 없는 인터페이스이므로 결과를 버린다 — 시작 시
+    // 전원 START_CHIPS(1000) >= MIN_BET(10)이므로 "전원 관전" 분기는 여기서 일어나지 않는다.
     this.beginBettingRound();
   }
 
-  private beginBettingRound(): void {
+  /**
+   * 새 베팅 라운드를 연다. 최소 베팅(10)조차 할 수 없는 시트는 이번 라운드 관전으로
+   * 돌린다 — "칩 0" 만으로 판정하면, 어중간하게 1~9칩만 남은 시트가 betting에서
+   * 영원히 대기 상태(pending)로 남아 아무도 베팅을 끝낼 수 없는 교착 상태가 된다.
+   *
+   * 그 결과 전원이 관전이 되어버리면(모두가 최소 베팅 미만) betting에 머무르는 대신
+   * 곧장 dealRound()를 호출한다 — roundOrder가 비어 있으므로 dealRound()는 기존 로직
+   * 그대로 settle로 보내고, host는 거기서 endGame으로 게임을 끝낼 수 있다. 이렇게 하면
+   * "게임은 오직 host의 endGame으로만 끝난다"는 설계를 유지하면서도 betting에
+   * pendingPlayers()가 빈 채로 영원히 멈추는 상태를 만들지 않는다.
+   */
+  private beginBettingRound(): EngineEvent[] {
     for (const p of this.order) {
       const seat = this.seats.get(p)!;
       seat.hand = [];
       seat.bet = 0;
       seat.done = false;
-      seat.spectating = seat.chips === 0;
+      seat.spectating = seat.chips < MIN_BET;
     }
     this.dealerHand = [];
     this.phase = 'betting';
     this.ready = new Set();
     this.roundOrder = [];
     this.turnIdx = 0;
+
+    if (this.isBettingComplete()) {
+      // 리셋 직후이므로 이 조건은 곧 "전원 관전"과 동치다 (모든 bet이 0이므로).
+      return this.dealRound();
+    }
+    return [];
   }
 
   private draw(): Card {
     if (this.deck.length === 0) {
-      // 안전망: 이론상 한 라운드에서 52장을 다 쓰는 일은 없지만, 방어적으로 재보충한다.
-      this.deck = shuffle(makeDeck(), this.rng);
+      // 안전망: 이론상 한 라운드에서 52장을 다 쓰는 일은 드물지만, 만약 소진되면
+      // "테이블 위에 이미 나가 있는 카드"를 제외한 나머지로만 다시 셔플해야 한다.
+      // 그냥 새 makeDeck()을 통째로 셔플하면 이미 각 손패/딜러 패에 있는 카드가
+      // 다시 나올 수 있어 한 라운드 안에서 같은 카드가 중복 등장하게 된다.
+      const inPlay = new Set<Card>(this.dealerHand);
+      for (const seat of this.seats.values()) {
+        for (const c of seat.hand) inPlay.add(c);
+      }
+      this.deck = shuffle(
+        makeDeck().filter((c) => !inPlay.has(c)),
+        this.rng,
+      );
     }
     return this.deck.pop()!;
   }
@@ -328,8 +357,11 @@ export class BlackjackEngine implements GameEngine {
     this.ready.add(player);
     const events: EngineEvent[] = [{ text: `${player}님 준비 완료` }];
     if (this.order.every((p) => this.ready.has(p))) {
-      this.beginBettingRound();
-      events.push({ text: '다음 라운드! 베팅해주세요.' });
+      const roundEvents = this.beginBettingRound();
+      // roundEvents가 비어 있지 않으면 beginBettingRound가 "전원 관전"으로 바로
+      // settle까지 보낸 것이다 — 그 경우 "베팅해주세요" 안내는 오해를 부르므로 생략한다.
+      if (roundEvents.length === 0) events.push({ text: '다음 라운드! 베팅해주세요.' });
+      events.push(...roundEvents);
     }
     return events;
   }
@@ -430,6 +462,10 @@ export class BlackjackEngine implements GameEngine {
     return [];
   }
 
+  // 순수 조회 메서드다 — 절대 상태를 변경하지 않는다. Room이 타이머 렌더링을 위해
+  // 몇 번을 호출하든, 실제로 적용하기 전에 미리 호출하든 상태가 바뀌면 안 된다.
+  // (관전 전환은 beginBettingRound에서 chips < MIN_BET 기준으로 라운드 시작 시
+  // 한 번만 결정된다 — 그 덕분에 여기서는 spectating 플래그를 그대로 읽기만 하면 된다.)
   defaultAction(player: string): EngineAction | null {
     if (this.finished) return null;
     const seat = this.seats.get(player);
@@ -437,11 +473,6 @@ export class BlackjackEngine implements GameEngine {
 
     if (this.phase === 'betting') {
       if (seat.spectating || seat.bet !== 0) return null;
-      if (seat.chips < MIN_BET) {
-        // 최소 베팅조차 할 수 없는 플레이어는 타임아웃 시 자동으로 관전 전환한다.
-        seat.spectating = true;
-        return null;
-      }
       return { name: 'bet', arg: MIN_BET };
     }
     if (this.phase === 'acting') {
@@ -467,7 +498,9 @@ export class BlackjackEngine implements GameEngine {
         const wasCurrentTurn = idx === this.turnIdx && !this.seats.get(player)!.done;
         this.roundOrder.splice(idx, 1);
         if (idx < this.turnIdx) this.turnIdx--;
-        events.push({ text: `${player}님 이탈로 자동 스탠드 처리` });
+        // splice로 roundOrder에서 완전히 빠지므로 이후 settleRound()가 이 손패를
+        // 훑지 않는다 — 즉 정산되는 "스탠드"가 아니라 베팅을 그대로 잃는 "기권"이다.
+        events.push({ text: `${player}님 이탈로 기권 처리 (베팅 상실)` });
         if (wasCurrentTurn) {
           const next = this.findNextIdx(this.turnIdx);
           if (next === -1) {
@@ -496,8 +529,13 @@ export class BlackjackEngine implements GameEngine {
     if (this.phase === 'betting' && this.isBettingComplete()) {
       events.push(...this.dealRound());
     } else if (this.phase === 'settle' && this.order.every((p) => this.ready.has(p))) {
-      this.beginBettingRound();
-      events.push({ text: '다음 라운드! 베팅해주세요.' });
+      const roundEvents = this.beginBettingRound();
+      // roundEvents가 비어 있으면 정상적으로 betting에 머무른 것이고, 채워져 있으면
+      // beginBettingRound가 "전원 관전"으로 곧장 settle까지 보낸 것이다 — 그 경우
+      // "베팅해주세요" 안내는 오해를 부르므로 생략한다. (this.phase를 다시 읽는 대신
+      // 반환값으로 판단하는 편이 TS의 리터럴 narrowing과도 부딪히지 않는다.)
+      if (roundEvents.length === 0) events.push({ text: '다음 라운드! 베팅해주세요.' });
+      events.push(...roundEvents);
     }
 
     return events;

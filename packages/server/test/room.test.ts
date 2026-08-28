@@ -86,6 +86,39 @@ describe('Room — lobby', () => {
     expect(lastState(sent['철수']).phase).toBe('playing');
   });
 
+  it('빈 닉네임은 거부된다', () => {
+    const { room } = setup();
+    expect(room.join('')).toEqual({ ok: false, code: 'dup' });
+  });
+
+  it('공백만으로 된 닉네임은 거부된다', () => {
+    const { room } = setup();
+    expect(room.join('   ')).toEqual({ ok: false, code: 'dup' });
+    expect(room.join('\t\n')).toEqual({ ok: false, code: 'dup' });
+  });
+
+  it('너무 긴 닉네임은 거부된다', () => {
+    const { room } = setup();
+    expect(room.join('a'.repeat(33))).toEqual({ ok: false, code: 'dup' });
+    expect(room.join('a'.repeat(32))).toEqual({ ok: true }); // 경계값은 허용된다
+  });
+
+  it('앞뒤 공백이 있는 닉네임은 정리(trim)되어 저장된다', () => {
+    const { room, sent } = setup();
+    expect(room.join('  철수  ')).toEqual({ ok: true });
+    expect(lastState(sent['철수']).room.players).toEqual(['철수']); // 공백 없이 저장됨
+
+    // leave()/handleMessage()도 같은 방식으로 정리하므로, 원래 넘겼던(공백 포함) 닉네임으로도
+    // 정상적으로 이 플레이어를 가리킬 수 있다 — 저장된 값과 어긋나 "방에 없는 사람"으로
+    // 취급되지 않는다.
+    room.handleMessage('  철수  ', { type: 'action', name: 'start' });
+    // (혼자라 minPlayers 미달로 거부되지만, "방에 없는 사람"으로 무시된 게 아니라 인원 부족
+    // 사유가 정상적으로 안내된다는 점이 중요하다.)
+    const evs = events(sent['철수']);
+    expect(evs.length).toBeGreaterThan(0);
+    expect(evs[evs.length - 1].text).toContain('명이 있어야');
+  });
+
   it('② 7번째 join은 {ok:false, code:"full"}', () => {
     const { room } = setup();
     for (let i = 0; i < MAX_PLAYERS; i++) {
@@ -458,6 +491,20 @@ describe('Room — host 재할당(host 이탈이 방을 좌초시키지 않아�
 });
 
 describe('Room — 빈 방 복구(완전히 비었던 방이 좌초되지 않아야 한다)', () => {
+  it('host 공석이 null로 표현되어도(문자열 센티널 아님) 재입장자가 정상적으로 host를 물려받는다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.leave('철수'); // 방이 완전히 빈다 — 내부적으로 host는 null(진짜 공석)이 된다
+
+    // 두 번째 입장자가 host가 되는 게 아니라, "정말로 비어 있을 때 들어온 첫 사람"이 host가
+    // 되어야 한다 — 그리고 그 뒤로는 공석이 아니므로 세 번째 입장자가 또 가로채면 안 된다.
+    expect(room.join('영희')).toEqual({ ok: true });
+    expect(lastState(sent['영희']).room.host).toBe('영희');
+
+    expect(room.join('민수')).toEqual({ ok: true });
+    expect(lastState(sent['민수']).room.host).toBe('영희'); // 이미 채워진 자리를 민수가 가로채지 않는다
+  });
+
   it('lobby에서 마지막 인원이 나가도, 새로 들어온 사람이 host가 되어 정상적으로 시작할 수 있다', () => {
     const { room, sent } = setup();
     room.join('철수'); // host

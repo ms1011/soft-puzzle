@@ -27,6 +27,8 @@ const ENGINE_FACTORIES: Record<GameId, () => GameEngine> = {
   yacht: () => new YachtEngine(),
 };
 
+const MAX_NICKNAME_LENGTH = 32;
+
 /**
  * 하나의 게임 룸: 로비(입장/퇴장) → 플레이(엔진 위임 + 턴 타이머) → 결과(재시작/로비 복귀)의
  * 수명주기를 관리한다. 어떤 게임인지는 ENGINE_FACTORIES를 통해서만 알고, 그 밖의 모든 로직은
@@ -38,7 +40,9 @@ const ENGINE_FACTORIES: Record<GameId, () => GameEngine> = {
 export class Room {
   private readonly roomName: string;
   private readonly game: GameId;
-  private host: string;
+  // null은 "host 자리가 진짜로 비어 있다"는 뜻이다(방이 완전히 비었을 때만) — 문자열 센티널('')은
+  // 빈 닉네임이 실제로 join할 수 있는 한 실제 플레이어와 충돌할 수 있어 타입으로 배제한다.
+  private host: string | null;
   private readonly rng: Rng;
   private readonly now: () => number;
 
@@ -61,30 +65,41 @@ export class Room {
   }
 
   join(nickname: string): { ok: true } | { ok: false; code: 'full' | 'dup' | 'playing' } {
+    // 닉네임도 네트워크에서 오는 값이므로 신뢰하지 않는다: 앞뒤 공백을 정리하고, 빈 문자열이나
+    // 공백만으로 된 닉네임, 너무 긴 닉네임을 거부한다. 이건 단순히 표시 버그 방지 이상의 의미가
+    // 있다 — 빈 문자열이 실제로 players에 들어갈 수 있다면 host 공석 판정에 쓰는 값과 실제
+    // 플레이어 닉네임이 같은 타입(string)이라 서로 구분할 수 없게 된다(정확히 이전 라운드에서
+    // 발견된 충돌). 적합한 기존 실패 코드가 없어 'dup'을 재사용한다 — "이 닉네임은 쓸 수 없다"는
+    // 의미로 가장 가깝다.
+    const nick = nickname.trim();
+    if (nick.length === 0 || nick.length > MAX_NICKNAME_LENGTH) return { ok: false, code: 'dup' };
     if (this.phase !== 'lobby') return { ok: false, code: 'playing' };
-    if (this.players.includes(nickname)) return { ok: false, code: 'dup' };
+    if (this.players.includes(nick)) return { ok: false, code: 'dup' };
     if (this.players.length >= MAX_PLAYERS) return { ok: false, code: 'full' };
 
-    this.players.push(nickname);
-    if (this.host === '') {
+    this.players.push(nick);
+    if (this.host === null) {
       // host 자리가 "진짜로 비어 있을 때"만(방이 완전히 비었다가 다시 채워지는 경우 등) 새로
       // 들어온 사람이 host가 된다. 지정된 host가 아직 한 번도 join하지 않은 상태(this.host는
       // opts.host로 채워져 있지만 players에는 없는 상태)와는 반드시 구분해야 한다 — 그 경우까지
       // "players에 없다"로 판단하면, 지정된 host보다 먼저 들어온 다른 사람이 영구히 host를
       // 가로채고 진짜 host는 join한 뒤에도 영영 시작 권한을 얻지 못한다(회귀 버그로 발견됨).
-      this.host = nickname;
+      // null은(문자열 센티널과 달리) 어떤 유효한 닉네임과도 절대 같을 수 없으므로, 위에서 빈
+      // 닉네임을 거부하지 않았더라도 이 판정 자체는 여전히 안전하다.
+      this.host = nick;
     }
     this.broadcastState();
     return { ok: true };
   }
 
   leave(nickname: string): void {
-    if (!this.players.includes(nickname)) return;
-    const wasHost = nickname === this.host;
+    const nick = nickname.trim();
+    if (!this.players.includes(nick)) return;
+    const wasHost = nick === this.host;
 
     if (this.phase === 'playing' && this.engine) {
-      const departureEvents = this.engine.removePlayer(nickname);
-      this.players = this.players.filter((p) => p !== nickname);
+      const departureEvents = this.engine.removePlayer(nick);
+      this.players = this.players.filter((p) => p !== nick);
       this.broadcastEvents(departureEvents);
       if (this.engine.isFinished()) {
         this.phase = 'result';
@@ -93,7 +108,7 @@ export class Room {
         this.refreshDeadline();
       }
     } else {
-      this.players = this.players.filter((p) => p !== nickname);
+      this.players = this.players.filter((p) => p !== nick);
     }
 
     if (this.players.length === 0) {
@@ -102,47 +117,49 @@ export class Room {
       // {code:'playing'}을 돌려주고, phase가 'lobby'였더라도 host가 떠난 사람 이름에 고정된 채라
       // 새로 들어온 사람은 절대 start할 수 없다(방장만 시작 가능이므로).
       //
-      // host는 여기서 "누구였는지 잊고" 명시적으로 공석('')으로 비워둔다 — join()이 이 공석을
+      // host는 여기서 "누구였는지 잊고" 명시적으로 공석(null)으로 비워둔다 — join()이 이 공석을
       // 보고 다음 입장자를 host로 승격한다. players에 있는지 여부로 "host가 없다"를 추론하면
       // (이전 시도의 버그) 지정된 host가 아직 한 번도 join하지 않은 정상적인 상태와 구분할 수
       // 없어, 먼저 들어온 다른 사람이 영구히 host를 가로채는 회귀가 생긴다.
       this.phase = 'lobby';
       this.engine = undefined;
       this.deadline = null;
-      this.host = '';
+      this.host = null;
       return;
     }
 
     if (wasHost) {
       // players는 join한 순서 그대로 유지되므로(제거만 하고 재정렬하지 않음), 맨 앞이
       // "가장 오래 남아있는" 플레이어다.
-      this.host = this.players[0];
+      const newHost = this.players[0];
+      this.host = newHost;
       // 게임이 실행 중(엔진이 존재)이면 엔진에도 새 host를 반영한다 — 그래야 블랙잭처럼
       // host 게이팅 액션(endGame)이 있는 엔진이 새 host를 인정한다. 방금 이 leave() 호출로
       // 막 끝난 엔진이라도 host 필드를 갱신하는 것 자체는 다른 어떤 상태(seats/order/턴 등)에도
       // 영향을 주지 않으므로 안전하다 — announce 전에 먼저 반영해 방송되는 state가 이미 참이 되게 한다.
-      this.engine?.setHost(this.host);
-      this.broadcastEvents([{ text: `${this.host}님이 새 방장이 되었습니다.` }]);
+      this.engine?.setHost(newHost);
+      this.broadcastEvents([{ text: `${newHost}님이 새 방장이 되었습니다.` }]);
     }
 
     this.broadcastState();
   }
 
   handleMessage(nickname: string, msg: ClientMsg): void {
-    if (!this.players.includes(nickname)) return; // 방에 없는 사람의 메시지는 무시
+    const nick = nickname.trim();
+    if (!this.players.includes(nick)) return; // 방에 없는 사람의 메시지는 무시
     if (msg === null || typeof msg !== 'object') return; // 네트워크 경계 — 형태를 신뢰하지 않는다
 
     const type = (msg as { type?: unknown }).type;
     if (type === 'action') {
       const name = (msg as { name?: unknown }).name;
       if (typeof name !== 'string') return;
-      this.handleAction(nickname, name, (msg as { arg?: unknown }).arg);
+      this.handleAction(nick, name, (msg as { arg?: unknown }).arg);
     } else if (type === 'chat') {
       const text = (msg as { text?: unknown }).text;
       if (typeof text !== 'string') return;
       const trimmed = text.trim();
       if (!trimmed) return;
-      this.broadcastEvents([{ text: `[${nickname}] ${trimmed}` }]);
+      this.broadcastEvents([{ text: `[${nick}] ${trimmed}` }]);
     }
     // 'join'이나 알 수 없는 type은 여기서 다루지 않는다(join은 별도 API) — 조용히 무시.
   }
@@ -211,7 +228,9 @@ export class Room {
       return;
     }
     this.engine = engine;
-    this.engine.start([...this.players], this.host, this.rng);
+    // nickname === this.host는 위 guard에서 이미 확인됐다 — this.host(string | null)를 그대로
+    // 넘기는 대신 이미 string으로 확정된 nickname을 넘기면 null 분기를 신경 쓸 필요가 없다.
+    this.engine.start([...this.players], nickname, this.rng);
     this.phase = 'playing';
     this.refreshDeadline();
     this.broadcastState();
@@ -242,7 +261,8 @@ export class Room {
     }
     const engine = ENGINE_FACTORIES[this.game]();
     this.engine = engine;
-    this.engine.start([...this.players], this.host, this.rng);
+    // nickname === this.host는 위 guard에서 이미 확인됐다 — 이유는 tryStart와 동일하다.
+    this.engine.start([...this.players], nickname, this.rng);
     this.phase = 'playing';
     this.refreshDeadline();
     this.broadcastState();
@@ -280,7 +300,13 @@ export class Room {
   }
 
   private stateFor(nickname: string): ServerMsg {
-    const room = { name: this.roomName, game: this.game, host: this.host, players: [...this.players] };
+    // 불변식: this.host가 null인 것은 정확히 this.players가 빈 그 순간뿐이다(leave()가 방을
+    // 비우는 바로 그 지점에서만 null로 만들고, join()은 players를 채우는 그 즉시 host를 다시
+    // 채운다) — 그리고 broadcastState()는 항상 this.players를 순회해서 호출되므로, 이 함수가
+    // 실행되고 있다는 사실 자체가 players가 비어있지 않다는 뜻이고 따라서 host도 null일 수
+    // 없다. ServerMsg의 room.host는 string이라 타입을 맞추기 위해 ?? ''를 쓰지만, 실제로 이
+    // 폴백이 관측되는 경로는 없다(도달 불가능한 방어적 코드).
+    const room = { name: this.roomName, game: this.game, host: this.host ?? '', players: [...this.players] };
     if (this.phase === 'lobby' || !this.engine) {
       return { type: 'state', phase: 'lobby', room };
     }

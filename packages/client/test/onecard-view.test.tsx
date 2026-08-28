@@ -1,8 +1,10 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
-import { OneCardView } from '../src/ui/game/OneCardView.js';
+import { OneCardView, renderLiftedHand } from '../src/ui/game/OneCardView.js';
 import type { GameViewProps } from '../src/ui/game/types.js';
+import { renderHand } from '../src/art/cards.js';
+import { findNonAsciiNonHangul } from './testUtils.js';
 
 const ESC = '';
 const RIGHT_ARROW = `${ESC}[C`;
@@ -131,11 +133,84 @@ describe('OneCardView', () => {
     }).not.toThrow();
   });
 
-  it('상대는 닉네임과 장수만 보여주고 카드 내용은 보여주지 않는다', () => {
+  it('상대는 닉네임과 장수만 보여주고, 카드는 실제 내용이 아니라 뒷면 겹침 아트로만 그린다', () => {
+    // 리뷰 지적: 예전 테스트는 이름과 나왔다는 것만 확인했지 "내용을 보여주지 않는다"는
+    // 실제로 검증하지 않았다(부정 단언 없음 + 픽스처에 새어나갈 상대 카드 자체가 없었다).
+    // 지금은 opponents가 실제로 renderHand(Array(n).fill('back'))로 그려지므로, 그 블록이
+    // 정확히 그 결과와 일치하는지 확인한다 — 뒷면이 아닌 다른 무엇(예: 무늬 기호)이
+    // 섞이면 이 비교가 깨진다.
     const { lastFrame, unmount } = render(<OneCardView {...baseProps()} />);
     const frame = lastFrame() ?? '';
+    const lines = frame.split('\n');
     expect(frame).toContain('영희');
-    expect(frame).toContain('5');
+    expect(frame).toContain('5장');
+
+    const nickLineIdx = lines.findIndex((l) => l.includes('영희'));
+    expect(nickLineIdx).toBeGreaterThanOrEqual(0);
+    const expectedBack = renderHand(Array(5).fill('back' as const), { unicode: true });
+    const actualBlock = lines.slice(nickLineIdx + 1, nickLineIdx + 1 + expectedBack.length);
+    expect(actualBlock).toEqual(expectedBack);
+
+    // 그 블록 안에는 무늬 기호(카드 내용이 새어나갔다는 뜻)가 전혀 없어야 한다.
+    for (const line of actualBlock) {
+      expect(line).not.toMatch(/[♠♥♦♣]/);
+    }
+    unmount();
+  });
+
+  it('회귀: 선택된 카드가 손패의 마지막 장이 아니어도 온전한 폭(무늬까지)으로 보인다', () => {
+    // 예전엔 선택된 카드가 last card가 아니면 겹침 규칙(왼쪽 2칸만)에 걸려 무늬가 아예
+    // 안 보였다. 3장 중 커서 기본값(0)은 첫 카드(3S, last가 아님) — 무늬(♠)가 보여야 한다.
+    const view = playingView({ you: { hand: ['3S', 'KH', '5H'], handCount: 3, isTurn: true } });
+    const { lastFrame, unmount } = render(<OneCardView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('♠');
+    unmount();
+  });
+
+  it('회귀: 낼 수 없는 카드는 dimColor 힌트 조각으로 표시된다(renderLiftedHand 플러밍)', () => {
+    // ink-testing-library의 lastFrame()은 ANSI 색상 코드를 남기지 않으므로(색 지원이 꺼진
+    // 환경) dimColor가 실제로 화면에 어떻게 보이는지는 텍스트 비교로 검증할 수 없다 —
+    // 대신 렌더링이 의존하는 순수 로직(어떤 카드가 playable=false로 표시되는지, 그리고
+    // 그 표시가 정확히 그 카드가 차지하는 칸에만 붙는지)을 직접 검증한다.
+    const cards = ['8S', '3S']; // top 3H 기준: 8S=불가, 3S=가능(랭크 일치)
+    const playable = [false, true];
+    const rows = renderLiftedHand(cards, 0, playable, { unicode: true });
+    // 각 행은 카드 수만큼(2장) 조각을 가져야 하고, 조각 순서가 카드 순서와 같아야 한다.
+    for (const row of rows) {
+      expect(row).toHaveLength(2);
+      expect(row[0]!.playable).toBe(false);
+      expect(row[1]!.playable).toBe(true);
+    }
+  });
+
+  it('무늬 선택 팝업에서 Esc를 누르면 취소되고(안내 문구에도 Esc 취소가 나온다) send는 호출되지 않는다', async () => {
+    const view = playingView({ you: { hand: ['7S', '3S'], handCount: 2, isTurn: true }, top: '9S' });
+    const send = vi.fn();
+    const { lastFrame, stdin, unmount } = render(<OneCardView {...baseProps({ view, send })} />);
+    await tick();
+    stdin.write('\r'); // 7 선택 → 무늬 선택 팝업
+    await tick();
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('Esc 취소');
+    stdin.write(ESC); // Esc로 취소
+    await tick();
+    expect(send).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('--ascii 테마에서 ASCII·한글 외 문자가 새지 않는다', () => {
+    const view = playingView({
+      attackStack: 5,
+      declaredSuit: 'H',
+      direction: -1,
+      you: { hand: ['7S', 'KH', 'JB'], handCount: 3, isTurn: true },
+    });
+    const { lastFrame, unmount } = render(
+      <OneCardView {...baseProps({ view, theme: { unicode: false } })} />,
+    );
+    const frame = lastFrame() ?? '';
+    expect(findNonAsciiNonHangul(frame)).toEqual([]);
     unmount();
   });
 });

@@ -64,6 +64,29 @@ function padDisplay(str: string, width: number): string {
 }
 
 /**
+ * 표시 폭 기준으로 잘라낸다. 서버(Room)는 닉네임을 최대 32자(표시 폭 최대 64칼럼)까지
+ * 허용하는데, 점수표는 최대 인원(MAX_PLAYERS=6)에서도 터미널 폭 안에 들어와야 한다 —
+ * 리뷰에서 3인 80칼럼·6인 100칼럼 모두 표가 깨지는 것으로 실측됐다. 닉네임 표시 폭에
+ * 상한을 두는 것이 그 1차 방어선이다.
+ */
+const NICK_DISPLAY_CAP = 8;
+function truncateDisplay(str: string, maxWidth: number): string {
+  if (displayWidth(str) <= maxWidth) return str;
+  let result = '';
+  let w = 0;
+  for (const ch of str) {
+    const cw = displayWidth(ch);
+    if (w + cw > maxWidth) break;
+    result += ch;
+    w += cw;
+  }
+  return result;
+}
+
+/** "이게 나다" 표시 — 블랙잭·원카드와 같은 표기로 통일한다(리뷰 지적: 야추만 '*'를 썼다). */
+const YOU_SUFFIX = ' (나)';
+
+/**
  * 야추 게임 화면. dice/held/rollsLeft는 "현재 턴 플레이어"의 것이지 나만의 것이 아니다 —
  * 내 턴인지는 오직 yourActions가 비어 있는지로 판단한다(엔진은 내 턴일 때만
  * toggleHold/score를 채워 넣는다).
@@ -74,6 +97,7 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
   const isYourTurn = actions.length > 0;
   const canReroll = actions.includes('reroll');
   const canScore = actions.includes('score');
+  const canHold = actions.includes('toggleHold');
 
   const [selecting, setSelecting] = useState(false);
   const [cursor, setCursor] = useState(0);
@@ -99,14 +123,15 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
           send('score', cat);
           setSelecting(false);
         }
-      } else if (input === 'c') {
+      } else if (key.escape) {
+        // 취소 키는 Esc로 세 화면 전체에서 통일한다(리뷰 지적: 예전엔 야추만 c로 취소했다).
         setSelecting(false);
       }
       return;
     }
 
     if (input >= '1' && input <= '5') {
-      if (actions.includes('toggleHold')) send('toggleHold', Number(input) - 1);
+      if (canHold) send('toggleHold', Number(input) - 1);
     } else if (input === 'r') {
       if (canReroll) send('reroll');
     } else if (input === 'c') {
@@ -120,65 +145,116 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
   const safeCursor = Math.min(cursor, Math.max(0, unscored.length - 1));
   const cursorCat = selecting ? unscored[safeCursor] : undefined;
 
-  // 헤더 칸 폭: 커서 자리(항상 1칸 예약) + 닉네임 표시폭 + 본인이면 '*' 1칸.
-  const nameWidth = Math.max(
-    4,
-    ...v.players.map((p) => 1 + displayWidth(p.nickname) + (p.nickname === you ? 1 : 0)),
-  );
+  // 턴/커서 마커는 블랙잭·원카드와 같은 ◀(ascii: <)로 통일한다(리뷰 지적: 예전엔 야추만
+  // ▶를 썼다). 이 화면에서는 "누구 턴인지"(헤더)와 "카테고리 선택 커서"(행) 두 곳에 쓴다.
+  const turnGlyph = theme.unicode ? '◀' : '<';
+
+  function fitNick(nick: string): string {
+    return truncateDisplay(nick, NICK_DISPLAY_CAP);
+  }
+
+  // 각 플레이어 칸의 폭은 그 플레이어 자신의 내용(커서 1칸 + 잘라낸 닉네임 + 본인이면
+  // ' (나)')만으로 정한다 — 리뷰 실측 중 발견: 처음엔 전원에게 같은 폭(전체 중 최댓값)을
+  // 썼는데, 그러면 플레이어 한 명의 닉네임이 길 때(설령 8칸으로 잘렸어도 ' (나)'가 붙는
+  // "나"라면) 그 폭이 나머지 5개 칸에도 그대로 강제되어 6인 표가 순식간에 100칼럼을
+  // 넘겼다. 칸마다 자기 몫만 쓰게 하면 긴 닉네임 하나가 표 전체를 부풀리지 않는다.
+  function colWidth(p: YachtPlayerView): number {
+    return Math.max(
+      4,
+      1 + displayWidth(fitNick(p.nickname)) + (p.nickname === you ? displayWidth(YOU_SUFFIX) : 0),
+    );
+  }
+
+  // 리뷰 지적(회귀): 예전엔 카테고리 행이 padDisplay(label, labelWidth - 1)로 패딩해 12칼럼
+  // 라벨(S.스트레이트/L.스트레이트)이 정확히 한 칸 넘쳐 그 뒤 모든 칸이 밀렸다. 이제는
+  // 모든 행(헤더·카테고리·소계/보너스/총점)이 "커서 1칸 + 라벨을 labelWidth로 패딩 + 구분
+  // 공백 1칸"이라는 같은 함수(rowLine)로만 만들어져 라벨 길이와 무관하게 폭이 고정된다.
   const labelWidth = Math.max(...Object.values(CATEGORY_LABELS).map(displayWidth), 4);
+
+  function rowLine(marker: string, label: string, cells: string): string {
+    return `${marker}${padDisplay(label, labelWidth)} ${cells}`;
+  }
 
   function scoreCell(p: YachtPlayerView, cat: YachtCategory): string {
     const score = p.sheet[cat];
     return score === undefined ? '-' : String(score);
   }
 
-  const cursorGlyph = theme.unicode ? '▶' : '>';
-
   function playerHeader(p: YachtPlayerView): string {
-    const name = `${p.isTurn ? cursorGlyph : ' '}${p.nickname}${p.nickname === you ? '*' : ''}`;
-    return padDisplay(name, nameWidth);
+    const name = `${p.isTurn ? turnGlyph : ' '}${fitNick(p.nickname)}${p.nickname === you ? YOU_SUFFIX : ''}`;
+    return padDisplay(name, colWidth(p));
   }
+
+  const headerCells = v.players.map(playerHeader).join(' ');
 
   return (
     <Box flexDirection="column">
       <Box>
-        <Box flexDirection="column" marginRight={2}>
+        {/* 점수표(flexShrink=0, 아래)가 폭을 다 못 채우면 이 칸이 대신 줄어든다. wrap
+         * "truncate-end"가 없으면 Ink가 각 줄을 여러 줄로 접어(reflow) 주사위 아트가
+         * 대각선으로 흩어지는 형태가 된다 — 한 줄로 유지하고 넘치는 부분만 자르는 편이
+         * 훨씬 덜 깨져 보인다. */}
+        <Box flexDirection="column" marginRight={2} flexShrink={1}>
           {renderDice(v.dice, v.held, theme).map((line, i) => (
-            <Text key={i}>{line}</Text>
+            <Text key={i} wrap="truncate-end">
+              {line}
+            </Text>
           ))}
-          <Text>남은 굴림: {v.rollsLeft}회</Text>
-          {v.turnPlayer !== null && <Text dimColor>{v.turnPlayer}님의 차례</Text>}
+          <Text wrap="truncate-end">남은 굴림: {v.rollsLeft}회</Text>
+          {v.turnPlayer !== null && (
+            <Text dimColor wrap="truncate-end">
+              {v.turnPlayer}님의 차례
+            </Text>
+          )}
         </Box>
 
-        <Box flexDirection="column">
-          <Text>
-            {padDisplay('', labelWidth)} {v.players.map(playerHeader).join(' ')}
-          </Text>
+        {/* 점수표는 절대 압축되면 안 된다 — flexShrink 기본값(1)대로 두면 터미널 폭이
+         * 모자랄 때 Yoga가 이 칸을 줄이고, 그러면 각 Text가 자기 칸 폭에 맞춰 줄바꿈되며
+         * 표 전체가 행 사이에 빈 줄이 끼는 식으로 깨진다(리뷰 실측: 3인 80칼럼, 6인
+         * 100칼럼). 압축이 필요하면 대신 왼쪽 주사위 칸이 줄어들게 한다. */}
+        <Box flexDirection="column" flexShrink={0}>
+          <Text>{rowLine(' ', '', headerCells)}</Text>
           {CATEGORY_ORDER.map((cat) => {
             const isCursorRow = cursorCat === cat;
+            const cells = v.players.map((p) => padDisplay(scoreCell(p, cat), colWidth(p))).join(' ');
             return (
               <Text key={cat} bold={isCursorRow}>
-                {isCursorRow ? cursorGlyph : ' '}
-                {padDisplay(CATEGORY_LABELS[cat], labelWidth - 1)}{' '}
-                {v.players.map((p) => padDisplay(scoreCell(p, cat), nameWidth)).join(' ')}
+                {rowLine(isCursorRow ? turnGlyph : ' ', CATEGORY_LABELS[cat], cells)}
               </Text>
             );
           })}
           <Text dimColor>
-            {padDisplay('소계', labelWidth)} {v.players.map((p) => padDisplay(String(p.upperTotal), nameWidth)).join(' ')}
+            {rowLine(' ', '소계', v.players.map((p) => padDisplay(String(p.upperTotal), colWidth(p))).join(' '))}
           </Text>
           <Text dimColor>
-            {padDisplay('보너스', labelWidth)} {v.players.map((p) => padDisplay(String(p.bonus), nameWidth)).join(' ')}
+            {rowLine(' ', '보너스', v.players.map((p) => padDisplay(String(p.bonus), colWidth(p))).join(' '))}
           </Text>
           <Text bold>
-            {padDisplay('총점', labelWidth)} {v.players.map((p) => padDisplay(String(p.total), nameWidth)).join(' ')}
+            {rowLine(' ', '총점', v.players.map((p) => padDisplay(String(p.total), colWidth(p))).join(' '))}
           </Text>
         </Box>
       </Box>
 
+      {/* ActionBar가 [1-5] 홀드/[r] 리롤/[c] 점수 기록을 한 칸씩 보여주지만, 1~5가 각각
+       * "몇 번 주사위"인지·c가 무엇을 여는지는 여기서 한 번 더 풀어서 설명한다 —
+       * yourActions에 실제로 있는 것만(요구사항 1). */}
+      {!selecting && isYourTurn && (
+        <Box marginTop={1}>
+          <Text dimColor>
+            {[
+              canHold && '1~5 주사위 홀드 전환',
+              canReroll && 'r 리롤',
+              canScore && 'c 점수 카테고리 선택',
+            ]
+              .filter((s): s is string => typeof s === 'string')
+              .join('  ')}
+          </Text>
+        </Box>
+      )}
+
       {selecting && (
         <Box marginTop={1}>
-          <Text>카테고리 선택: {theme.unicode ? '↑↓' : '위/아래'} 이동, Enter 확정, c 취소</Text>
+          <Text>카테고리 선택: {theme.unicode ? '↑↓' : '위/아래'} 이동, Enter 확정, Esc 취소</Text>
         </Box>
       )}
     </Box>

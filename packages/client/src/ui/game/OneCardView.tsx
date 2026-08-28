@@ -40,6 +40,14 @@ interface OneCardGameView {
   direction: 1 | -1;
 }
 
+/** renderLiftedHand가 한 칸(카드 한 장, 한 줄)마다 돌려주는 조각 — dimColor를 카드
+ * 단위로 다르게 먹이려면(리뷰 지적: canPlay 힌트를 화면에도 반영) 손패 전체를 하나의
+ * 합쳐진 문자열이 아니라 카드별 조각으로 유지해야 한다. */
+export interface HandSegment {
+  text: string;
+  playable: boolean;
+}
+
 /**
  * 손패를 겹쳐 그리되, selectedIndex의 카드만 한 줄 위로 들어 올려 강조한다. renderHand는
  * 이런 "한 장만 다른 높이"를 표현할 수 없어(카드마다 완전히 같은 5줄 밴드를 가정) 여기서
@@ -50,9 +58,19 @@ interface OneCardGameView {
  * 손패 중간에 있는 카드를 선택했을 때 왼쪽 2칸만 보이는 겹침 규칙에 가려 "무엇을
  * 골랐는지" 거의 안 보이는 상태가 된다. 강조가 곧 이 함수의 목적이므로 선택 카드는
  * 예외로 둔다.
+ *
+ * 카드별로 { text, playable } 조각을 돌려준다(합쳐진 문자열 한 줄이 아니라) — 호출부가
+ * 카드마다 별도 <Text dimColor> 로 감싸 canPlay 힌트를 시각적으로 보여줄 수 있게 하기
+ * 위해서다. playable은 어디까지나 힌트다: 서버가 최종 판정을 내리고, Enter는 이 힌트와
+ * 무관하게 canPlay를 다시 확인한 뒤에만 send한다.
  */
-function renderLiftedHand(cards: Card[], selectedIndex: number, theme: GameViewProps['theme']): string[] {
-  const rows: string[] = Array.from({ length: CARD_HEIGHT + 1 }, () => '');
+export function renderLiftedHand(
+  cards: Card[],
+  selectedIndex: number,
+  playable: boolean[],
+  theme: GameViewProps['theme'],
+): HandSegment[][] {
+  const rows: HandSegment[][] = Array.from({ length: CARD_HEIGHT + 1 }, () => []);
   cards.forEach((card, i) => {
     const isLast = i === cards.length - 1;
     const isSelected = i === selectedIndex;
@@ -63,7 +81,8 @@ function renderLiftedHand(cards: Card[], selectedIndex: number, theme: GameViewP
     const offset = isSelected ? 0 : 1;
     for (let r = 0; r < rows.length; r++) {
       const cardRow = r - offset;
-      rows[r] += cardRow >= 0 && cardRow < CARD_HEIGHT ? sliceLine(lines[cardRow]) : ' '.repeat(width);
+      const text = cardRow >= 0 && cardRow < CARD_HEIGHT ? sliceLine(lines[cardRow]) : ' '.repeat(width);
+      rows[r].push({ text, playable: playable[i] ?? true });
     }
   });
   return rows;
@@ -71,9 +90,11 @@ function renderLiftedHand(cards: Card[], selectedIndex: number, theme: GameViewP
 
 /**
  * 원카드 게임 화면. 서버는 상대의 손패 내용을 절대 보내지 않는다(handCount만) — 그러니
- * 여기서도 상대 카드는 뒷면 장수로만 그린다. canPlay는 어디까지나 "낼 수 없어 보이는 카드를
- * 미리 알려주는" 클라이언트 힌트일 뿐이다: 서버가 최종 판정을 내리고, 이 화면은 그 힌트로
- * Enter를 미리 무시할 뿐 규칙을 스스로 강제하지 않는다.
+ * 여기서도 상대 카드는 뒷면 겹침 아트(renderHand(Array(n).fill('back')))로만 그린다.
+ * canPlay는 어디까지나 "낼 수 없어 보이는 카드를 미리 알려주는" 클라이언트 힌트일 뿐이다:
+ * 서버가 최종 판정을 내리고, 이 화면은 그 힌트로 Enter를 미리 무시하거나(요구사항) 카드를
+ * dimColor로 흐리게 보여줄(브리프 결정: 명시적으로 켜기로 함) 뿐 규칙을 스스로 강제하지
+ * 않는다.
  */
 export function OneCardView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
   const v = view as unknown as OneCardGameView;
@@ -109,6 +130,7 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
         }
         setSuitPrompt(null);
       } else if (key.escape) {
+        // 취소 키는 Esc로 세 화면 전체에서 통일한다.
         setSuitPrompt(null);
       }
       return;
@@ -148,6 +170,12 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
       ? '(->)'
       : '(<-)';
 
+  // canPlay는 힌트일 뿐이다 — 내 턴이 아니면(canAct===false) "낼 수 없다"는 신호 자체가
+  // 무의미하므로 전부 playable 취급해 흐리게 보이지 않게 한다.
+  const playableFlags = hand.map((c) =>
+    canAct ? canPlay(c, v.top, v.declaredSuit, v.attackStack) : true,
+  );
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" marginBottom={1}>
@@ -163,10 +191,18 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
 
       <Box flexDirection="column" marginBottom={1}>
         {v.others.map((o) => (
-          <Text key={o.nickname}>
-            {o.isTurn ? (theme.unicode ? '◀ ' : '< ') : '  '}
-            {o.nickname} - {o.handCount}장
-          </Text>
+          <Box key={o.nickname} flexDirection="column" marginBottom={1}>
+            <Text>
+              {o.isTurn ? (theme.unicode ? '◀ ' : '< ') : '  '}
+              {o.nickname} - {o.handCount}장
+            </Text>
+            {/* 서버는 상대 카드 내용을 절대 보내지 않는다 — 실제 손패 배열이 아니라
+             * handCount만큼의 'back'을 그려 "장수만 안다"를 시각적으로도 지킨다. */}
+            {o.handCount > 0 &&
+              renderHand(Array(o.handCount).fill('back' as const), theme).map((line, i) => (
+                <Text key={i}>{line}</Text>
+              ))}
+          </Box>
         ))}
       </Box>
 
@@ -177,15 +213,42 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
         {hand.length === 0 ? (
           <Text dimColor>(손패 없음)</Text>
         ) : (
-          renderLiftedHand(hand, cursor, theme).map((line, i) => <Text key={i}>{line}</Text>)
+          renderLiftedHand(hand, cursor, playableFlags, theme).map((segments, r) => (
+            <Text key={r}>
+              {segments.map((seg, i) => (
+                <Text key={i} dimColor={!seg.playable}>
+                  {seg.text}
+                </Text>
+              ))}
+            </Text>
+          ))
         )}
       </Box>
 
       {suitPrompt !== null && (
         <Box marginTop={1}>
           <Text>
-            무늬 선택: {SUITS.map((s, i) => (i === suitCursor ? `[${suitGlyph(s, theme.unicode)}]` : ` ${suitGlyph(s, theme.unicode)} `)).join(' ')}
-            {'  '}({theme.unicode ? '←→' : '좌/우'} 이동, Enter 확정)
+            무늬 선택:{' '}
+            {SUITS.map((s, i) =>
+              i === suitCursor ? `[${suitGlyph(s, theme.unicode)}]` : ` ${suitGlyph(s, theme.unicode)} `,
+            ).join(' ')}
+            {'  '}({theme.unicode ? '←→' : '좌/우'} 이동, Enter 확정, Esc 취소)
+          </Text>
+        </Box>
+      )}
+
+      {/* ActionBar가 [Enter] 내기/[d] 뽑기를 보여주지만, 카드를 고르는 ←→ 커서 이동
+       * 자체는 yourActions에 없는(엔진 액션이 아닌) 순수 로컬 조작이라 ActionBar가 절대
+       * 표현할 수 없다 — 여기서 직접 안내한다. */}
+      {canAct && suitPrompt === null && (
+        <Box marginTop={1}>
+          <Text dimColor>
+            {[
+              canPlayAction && `${theme.unicode ? '←→' : '좌/우'} 카드 선택, Enter로 내기`,
+              canDraw && 'd 뽑기',
+            ]
+              .filter((s): s is string => typeof s === 'string')
+              .join('  ')}
           </Text>
         </Box>
       )}

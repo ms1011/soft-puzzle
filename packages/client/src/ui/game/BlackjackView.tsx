@@ -7,6 +7,7 @@ import type { GameViewProps } from './types.js';
 
 const MIN_BET = 10;
 const BET_STEP = 10;
+const BET_COARSE_STEP = 100;
 
 interface Seat {
   hand: Card[];
@@ -91,7 +92,13 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
   const [betAmount, setBetAmount] = useState(MIN_BET);
 
   const canBet = actions.includes('bet');
-  const maxBet = Math.max(MIN_BET, v.you.chips);
+  // 리뷰 지적: chips를 그대로 상한으로 쓰면 안 된다 — 자연 블랙잭 배당(bet + round(bet*1.5))처럼
+  // 10의 배수가 아닌 칩 액수가 실제로 나온다(예: 10칩 베팅 후 자연 블랙잭 승리 → 1,015칩).
+  // 엔진 doBet은 `arg % 10 !== 0`이면 조용히 거부하므로, chips를 그대로 최대값으로 보여주고
+  // Enter를 누르면 서버가 무시해 화면이 멈춘 것처럼 보인다 — 10의 배수로 내림한다. 스펙터가
+  // 아닌 한 chips는 항상 >= MIN_BET이 보장되므로(엔진의 spectating 판정) 별도 하한 보정은
+  // 필요 없다.
+  const maxBet = Math.floor(v.you.chips / BET_STEP) * BET_STEP;
   const clampedBet = Math.min(Math.max(betAmount, MIN_BET), maxBet);
 
   useInput((input, key) => {
@@ -102,6 +109,15 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
       }
       if (key.downArrow) {
         setBetAmount((a) => Math.max(MIN_BET, a - BET_STEP));
+        return;
+      }
+      // 굵은 단위 조절 — 1,000칩을 10단위로만 조절하면 500 베팅에 49번 키를 눌러야 한다.
+      if (key.rightArrow) {
+        setBetAmount((a) => Math.min(maxBet, a + BET_COARSE_STEP));
+        return;
+      }
+      if (key.leftArrow) {
+        setBetAmount((a) => Math.max(MIN_BET, a - BET_COARSE_STEP));
         return;
       }
       if (key.return) {
@@ -177,8 +193,39 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
       {canBet && (
         <Box marginTop={1}>
           <Text>
-            베팅액: {clampedBet.toLocaleString('ko-KR')} ({theme.unicode ? '↑↓' : '위/아래'} 10단위 조절,
-            Enter로 베팅, 최대 {maxBet.toLocaleString('ko-KR')})
+            베팅액: {clampedBet.toLocaleString('ko-KR')} ({theme.unicode ? '↑↓' : '위/아래'} 10단위,{' '}
+            {theme.unicode ? '←→' : '좌/우'} 100단위 조절, Enter로 베팅, 최대{' '}
+            {maxBet.toLocaleString('ko-KR')})
+          </Text>
+        </Box>
+      )}
+
+      {/* ActionBar가 액션마다 한 칸씩 [키] 힌트를 보여주지만, 여기서 한 줄로 다시 짚어준다
+       * — betting의 베팅 컨트롤 힌트와 같은 패턴이다. yourActions에 실제로 있는 것만
+       * 보여준다(요구사항 1). */}
+      {v.phase === 'acting' && (
+        <Box marginTop={1}>
+          <Text dimColor>
+            {[
+              actions.includes('hit') && 'h 히트',
+              actions.includes('stand') && 's 스탠드',
+              actions.includes('double') && 'd 더블다운',
+            ]
+              .filter((s): s is string => typeof s === 'string')
+              .join('  ')}
+          </Text>
+        </Box>
+      )}
+
+      {v.phase === 'settle' && (actions.includes('ready') || actions.includes('endGame')) && (
+        <Box marginTop={1}>
+          <Text dimColor>
+            {[
+              actions.includes('ready') && 'Enter 다음 판',
+              actions.includes('endGame') && 'e 게임 종료',
+            ]
+              .filter((s): s is string => typeof s === 'string')
+              .join('  ')}
           </Text>
         </Box>
       )}

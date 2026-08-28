@@ -34,3 +34,31 @@ export const ACTION_LABELS: Record<string, string> = {
   play: '내기',
   draw: '뽑기',
 };
+
+/**
+ * 게임 액션 이름 → 그 액션을 실제로 보내는 키. ActionBar는 예전에 `action.charAt(0)`으로
+ * 힌트를 만들었는데, 이는 우연히 이름과 키가 같은 액션(hit→h, stand→s, draw→d 등)에서만
+ * 맞고 그렇지 않은 액션(bet→Enter, ready→Enter, endGame→e, toggleHold→1~5, score→c,
+ * play→Enter)에서는 화면이 실제로 반응하지 않는 키를 안내하는 결과를 냈다(리뷰 지적).
+ * 여기 없는 액션은 ActionBar가 여전히 `action.charAt(0)`로 폴백한다.
+ */
+export const ACTION_KEYS: Record<string, string> = {
+  // 로비/결과 공통
+  start: 'Enter',
+  replay: 'r',
+  toLobby: 'q',
+  // 블랙잭
+  bet: 'Enter',
+  hit: 'h',
+  stand: 's',
+  double: 'd',
+  ready: 'Enter',
+  endGame: 'e',
+  // 야추
+  toggleHold: '1-5',
+  reroll: 'r',
+  score: 'c',
+  // 원카드
+  play: 'Enter',
+  draw: 'd',
+};

@@ -1,0 +1,15 @@
+{
+  "name": "card-night",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@card-night/core": "*",
+    "@card-night/server": "*"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests"
+  }
+}

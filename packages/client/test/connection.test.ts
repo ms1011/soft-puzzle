@@ -42,6 +42,16 @@ describe('Connection', () => {
     }
   });
 
+  it('서버가 정규화(trim)한 닉네임을 Connection.nickname으로 노출한다 — 원본 문자열이 아니다', async () => {
+    const server = await startServer(makeRoom('철수'));
+    servers.push(server);
+
+    const conn = await Connection.connect('127.0.0.1', server.port, '  철수  ');
+    connections.push(conn);
+
+    expect(conn.nickname).toBe('철수');
+  });
+
   it('닉네임이 이미 사용 중이면 dup 코드로 reject한다', async () => {
     const server = await startServer(makeRoom('먼저옴'));
     servers.push(server);
@@ -81,7 +91,7 @@ describe('Connection', () => {
     expect(closeCount).toBe(1);
   });
 
-  it('아무도 듣고 있지 않은 포트로 접속하면(잘못된 IP 시나리오) 빠르게 reject한다', async () => {
+  it('아무도 듣고 있지 않은 포트로 접속하면(잘못된 IP 시나리오) 원본 영어 에러가 아니라 한국어 메시지로 빠르게 reject한다', async () => {
     // 실제로 아무도 안 듣는 포트를 확보한 뒤 바로 닫아서 accept 거부(ECONNREFUSED)를 유도한다.
     const probe = net.createServer();
     const port = await new Promise<number>((resolve) => {
@@ -89,7 +99,16 @@ describe('Connection', () => {
     });
     await new Promise<void>((resolve) => probe.close(() => resolve()));
 
-    await expect(Connection.connect('127.0.0.1', port, '아무개')).rejects.toBeInstanceOf(Error);
+    try {
+      await Connection.connect('127.0.0.1', port, '아무개');
+      expect.fail('reject했어야 한다');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      // ECONNREFUSED 같은 원본 Node 에러 문자열이 그대로 새어나가지 않는지까지 확인한다 —
+      // 메시지만 느슨하게 매칭하면 원본을 그대로 통과시키는 구현도 우연히 통과할 수 있다.
+      expect((err as Error).message).toBe('서버에 연결할 수 없습니다.');
+      expect((err as Error).message).not.toMatch(/ECONNREFUSED/);
+    }
   });
 
   it('서버가 TCP는 받아주지만 응답이 없으면 타임아웃으로 reject한다(행 방지)', async () => {

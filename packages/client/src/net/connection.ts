@@ -3,6 +3,7 @@ import { encodeMsg, NdjsonDecoder } from '@card-night/core';
 import type { ClientMsg, ServerMsg } from '@card-night/core';
 
 type JoinErrorMsg = Extract<ServerMsg, { type: 'error' }>;
+type JoinedMsg = Extract<ServerMsg, { type: 'joined' }>;
 
 /** join이 서버로부터 error로 거절되었을 때 던지는 예외. code는 UI가 분기하는 데, message는 그대로 보여주는 데 쓴다. */
 export class JoinError extends Error {
@@ -27,6 +28,12 @@ function isServerMsgLike(v: unknown): v is { type: string } {
  * 로비/게임 로직은 전혀 모른다.
  */
 export class Connection {
+  /**
+   * 서버가 실제로 등록한 정규화(trim된) 닉네임 — join()에 넘긴 원본 문자열과 다를 수 있다.
+   * state.room.players/view의 각 플레이어 키가 전부 이 정규화된 형태이므로, "나"를 식별하려면
+   * (내 행 강조, 내 패 찾기, 내 턴인지 판정 등) 호출자가 넘긴 원본이 아니라 이 값을 써야 한다.
+   */
+  readonly nickname: string;
   private readonly socket: net.Socket;
   private readonly decoder: NdjsonDecoder;
   private readonly messageCbs: Array<(msg: ServerMsg) => void> = [];
@@ -40,9 +47,10 @@ export class Connection {
   private closeFired = false;
   private userClosed = false;
 
-  private constructor(socket: net.Socket, decoder: NdjsonDecoder, initialPending: ServerMsg[]) {
+  private constructor(socket: net.Socket, decoder: NdjsonDecoder, nickname: string, initialPending: ServerMsg[]) {
     this.socket = socket;
     this.decoder = decoder;
+    this.nickname = nickname;
     this.pendingMessages = initialPending;
 
     this.socket.on('data', (chunk: Buffer) => {
@@ -161,7 +169,8 @@ export class Connection {
           if (!isServerMsgLike(raw)) continue;
           if (raw.type === 'joined') {
             const rest = parsed.slice(i + 1) as ServerMsg[];
-            settleResolve(new Connection(socket, decoder, rest));
+            const canonicalNickname = (raw as JoinedMsg).you;
+            settleResolve(new Connection(socket, decoder, canonicalNickname, rest));
             return;
           }
           if (raw.type === 'error') {
@@ -174,7 +183,11 @@ export class Connection {
       };
 
       const onError = (err: Error): void => {
-        settleReject(err);
+        // 원본 에러(예: 'connect ECONNREFUSED 192.168.0.5:7420')를 그대로 UI에 보이면 이 앱의
+        // 다른 모든 화면과 달리 영어 Node 에러가 노출된다 — 잘못된 IP/포트 수동 입력은 Task 12가
+        // 제공하는 실제 사용자 경로라 이 경로는 실제로 밟힌다. 원인은 cause로 남겨 디버깅은
+        // 여전히 가능하게 한다.
+        settleReject(new Error('서버에 연결할 수 없습니다.', { cause: err }));
       };
 
       const onClose = (): void => {

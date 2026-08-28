@@ -66,9 +66,12 @@ export class Room {
     if (this.players.length >= MAX_PLAYERS) return { ok: false, code: 'full' };
 
     this.players.push(nickname);
-    if (!this.players.includes(this.host)) {
-      // host가 더 이상 방에 없다(예: 방이 완전히 비었다가 다시 채워짐) — 새로 들어온 사람이
-      // host가 되어야 방이 영영 시작 불가능한 상태로 좌초되지 않는다.
+    if (this.host === '') {
+      // host 자리가 "진짜로 비어 있을 때"만(방이 완전히 비었다가 다시 채워지는 경우 등) 새로
+      // 들어온 사람이 host가 된다. 지정된 host가 아직 한 번도 join하지 않은 상태(this.host는
+      // opts.host로 채워져 있지만 players에는 없는 상태)와는 반드시 구분해야 한다 — 그 경우까지
+      // "players에 없다"로 판단하면, 지정된 host보다 먼저 들어온 다른 사람이 영구히 host를
+      // 가로채고 진짜 host는 join한 뒤에도 영영 시작 권한을 얻지 못한다(회귀 버그로 발견됨).
       this.host = nickname;
     }
     this.broadcastState();
@@ -97,11 +100,16 @@ export class Room {
       // 방이 완전히 비었다 — 알릴 사람은 없지만, 세션 상태를 로비로 리셋해두지 않으면 이 방은
       // 영원히 죽는다: phase가 'playing'/'result'에 멈춘 채면 info()는 "0/6"인데 join()은 계속
       // {code:'playing'}을 돌려주고, phase가 'lobby'였더라도 host가 떠난 사람 이름에 고정된 채라
-      // 새로 들어온 사람은 절대 start할 수 없다(방장만 시작 가능이므로). host 자체는 join()에서
-      // "방에 없는 host"를 감지해 새로 들어온 사람으로 넘겨준다.
+      // 새로 들어온 사람은 절대 start할 수 없다(방장만 시작 가능이므로).
+      //
+      // host는 여기서 "누구였는지 잊고" 명시적으로 공석('')으로 비워둔다 — join()이 이 공석을
+      // 보고 다음 입장자를 host로 승격한다. players에 있는지 여부로 "host가 없다"를 추론하면
+      // (이전 시도의 버그) 지정된 host가 아직 한 번도 join하지 않은 정상적인 상태와 구분할 수
+      // 없어, 먼저 들어온 다른 사람이 영구히 host를 가로채는 회귀가 생긴다.
       this.phase = 'lobby';
       this.engine = undefined;
       this.deadline = null;
+      this.host = '';
       return;
     }
 

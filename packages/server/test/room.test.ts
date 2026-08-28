@@ -63,6 +63,29 @@ describe('Room — lobby', () => {
     expect(s1.room.host).toBe('철수');
   });
 
+  it('지정된 host보다 다른 사람이 먼저 join해도 host 자리를 가로채지 않는다(회귀 방지)', () => {
+    // Room 생성 시점에는 host(철수)가 아직 join하지 않은 상태다 — 이 상태와 "방이 완전히
+    // 비었다가 다시 채워지는" 상태를 host 재할당 로직이 반드시 구분해야 한다.
+    const { room, sent } = setup(); // host 지정: '철수' (아직 join 전)
+    expect(room.join('영희')).toEqual({ ok: true }); // 철수보다 영희가 먼저 들어온다
+    expect(lastState(sent['영희']).room.host).toBe('철수'); // 영희가 host를 가로채지 않았다
+
+    // 영희는 host가 아니므로 start를 시도해도 거부된다 — 영희가 잠깐이라도 host였던 적이
+    // 없음을 사전에 확인한다.
+    room.handleMessage('영희', { type: 'action', name: 'start' });
+    expect(lastState(sent['영희']).phase).toBe('lobby');
+    const evs = events(sent['영희']);
+    expect(evs[evs.length - 1].text).toContain('방장');
+
+    // 지정된 host(철수)가 뒤늦게 들어와도 host 지위는 여전히 철수의 것이다.
+    expect(room.join('철수')).toEqual({ ok: true });
+    expect(lastState(sent['철수']).room.host).toBe('철수');
+
+    // 철수의 start는 정상적으로(방장 자격으로) 받아들여진다.
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    expect(lastState(sent['철수']).phase).toBe('playing');
+  });
+
   it('② 7번째 join은 {ok:false, code:"full"}', () => {
     const { room } = setup();
     for (let i = 0; i < MAX_PLAYERS; i++) {

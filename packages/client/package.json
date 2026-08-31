@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "터미널에서 즐기는 LAN 카드게임(블랙잭·원카드·야추) 파티 게임",
   "type": "module",
+  "license": "MIT",
+  "author": "ms1011",
   "bin": {
     "soft-puzzle": "dist/index.js"
   },
@@ -27,6 +29,6 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "build": "tsup",
-    "prepack": "npm run build"
+    "prepack": "npm run build && node -e \"require('fs').copyFileSync('../../README.md','README.md')\""
   }
 }

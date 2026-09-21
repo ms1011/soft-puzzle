@@ -5,9 +5,10 @@ export const GAME_LABELS: Record<GameId, string> = {
   blackjack: '블랙잭',
   onecard: '원카드',
   yacht: '야추',
+  mafia: '마피아',
 };
 
-export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht'];
+export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia'];
 
 /**
  * 게임 액션 이름 → 한국어 표시 라벨. 세 엔진이 실제로 내보내는 action name과 로비/결과의
@@ -33,6 +34,7 @@ export const ACTION_LABELS: Record<string, string> = {
   // 원카드
   play: '내기',
   draw: '뽑기',
+  vote: '투표',
 };
 
 /**
@@ -61,4 +63,5 @@ export const ACTION_KEYS: Record<string, string> = {
   // 원카드
   play: 'Enter',
   draw: 'd',
+  vote: 'Enter',
 };

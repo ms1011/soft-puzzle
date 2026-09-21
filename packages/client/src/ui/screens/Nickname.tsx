@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 export interface NicknameProps {
@@ -7,6 +7,10 @@ export interface NicknameProps {
   onSubmit: (nickname: string) => void;
   /** 직전 시도(중복/형식 오류 등)의 서버 거절 메시지가 있으면 보여준다. */
   error?: string;
+  /** 설정 화면으로 열었을 때는 Esc로 이전 화면으로 돌아갈 수 있다. */
+  onCancel?: () => void;
+  /** 기존 닉네임을 바꿀 때 입력란에 미리 채울 값. */
+  initialValue?: string;
 }
 
 /**
@@ -18,8 +22,12 @@ export interface NicknameProps {
  * 플랫폼에서 입력된 조합형(NFC) 문자열과 바이트 단위로 달라 서버의 중복 닉네임 판정을
  * 우회한다 — 그래서 App(저장·전송)에 넘기기 전에 정규화를 끝낸다.
  */
-export function Nickname({ onSubmit, error }: NicknameProps): React.JSX.Element {
-  const [value, setValue] = useState('');
+export function Nickname({ onSubmit, error, onCancel, initialValue = '' }: NicknameProps): React.JSX.Element {
+  const [value, setValue] = useState(initialValue);
+
+  useInput((_input, key) => {
+    if (key.escape) onCancel?.();
+  });
 
   const handleSubmit = (raw: string): void => {
     const normalized = raw.normalize('NFC').trim();
@@ -30,12 +38,13 @@ export function Nickname({ onSubmit, error }: NicknameProps): React.JSX.Element 
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>소프트퍼즐</Text>
-      <Text>닉네임을 입력하세요:</Text>
+      <Text>{initialValue ? '닉네임을 변경하세요:' : '닉네임을 입력하세요:'}</Text>
       <Box>
         <Text>{'> '}</Text>
         <TextInput value={value} onChange={setValue} onSubmit={handleSubmit} />
       </Box>
       {error !== undefined && <Text color="red">{error}</Text>}
+      {onCancel !== undefined && <Text dimColor>Esc: 취소</Text>}
     </Box>
   );
 }

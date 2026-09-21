@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import type { RoomInfo } from '@soft-puzzle/core';
 import { Nickname } from '../src/ui/screens/Nickname.js';
+import { MainMenu } from '../src/ui/screens/MainMenu.js';
 import { Lobby } from '../src/ui/screens/Lobby.js';
 import { Result } from '../src/ui/screens/Result.js';
 import { RoomList } from '../src/ui/screens/RoomList.js';
@@ -44,6 +45,43 @@ describe('Nickname 화면', () => {
     await tick();
 
     expect(onSubmit).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('기존 닉네임을 입력란에 채우고 Esc로 취소할 수 있다', async () => {
+    const onCancel = vi.fn();
+    const { stdin, lastFrame, unmount } = render(
+      <Nickname onSubmit={() => {}} initialValue="기존닉네임" onCancel={onCancel} />,
+    );
+
+    expect(lastFrame() ?? '').toContain('닉네임을 변경하세요');
+    expect(lastFrame() ?? '').toContain('기존닉네임');
+    await tick();
+    stdin.write(ESC);
+    await tick();
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+});
+
+describe('메인 메뉴', () => {
+  it('닉네임 설정을 선택하면 변경 콜백을 호출한다', async () => {
+    const onChangeNickname = vi.fn();
+    const { stdin, unmount } = render(
+      <MainMenu
+        onCreateRoom={() => {}}
+        onJoinRoom={() => {}}
+        onChangeNickname={onChangeNickname}
+        onQuit={() => {}}
+      />,
+    );
+
+    await tick();
+    stdin.write('3');
+    await tick();
+
+    expect(onChangeNickname).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
@@ -103,6 +141,24 @@ describe('ActionBar', () => {
 });
 
 describe('Result 화면', () => {
+  it('게임 종료와 최종 결과를 눈에 띄는 종료 배너로 알린다', () => {
+    const { lastFrame, unmount } = render(
+      <Result
+        ranking={[{ nickname: '철수', detail: '21점' }]}
+        youAreHost={false}
+        onReplay={() => {}}
+        onLeave={() => {}}
+        onToLobby={() => {}}
+      />,
+    );
+    const frame = lastFrame() ?? '';
+
+    expect(frame).toContain('게임 종료');
+    expect(frame).toContain('최종 결과');
+    expect(frame).toContain('★ 게임 종료 ★');
+    unmount();
+  });
+
   it('ranking을 받은 순서 그대로(순위 순서대로) 그린다', () => {
     const ranking = [
       { nickname: '철수', detail: '21점' },
@@ -186,6 +242,23 @@ describe('RoomList 화면 (치명적 결함, 중요사항 3)', () => {
   function room(overrides: Partial<RoomInfo> = {}): RoomInfo {
     return { room: '테스트 방', game: 'blackjack', players: '1/6', addr: '192.168.0.5:7420', ...overrides };
   }
+
+  it('방 목록 제목 옆에 현재 발견된 방 수를 표시한다', () => {
+    const { lastFrame, unmount } = render(
+      <RoomList
+        rooms={[room({ room: '방A' }), room({ room: '방B' })]}
+        scanning={false}
+        connecting={false}
+        onRefresh={() => {}}
+        onSelect={() => {}}
+        onManualConnect={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(lastFrame() ?? '').toContain('방 목록 (2개)');
+    unmount();
+  });
 
   it('rooms가 새로고침으로 줄어들면 커서가 새 목록 범위 안으로 클램프된다', async () => {
     const rooms = [room({ room: '방A' }), room({ room: '방B' })];

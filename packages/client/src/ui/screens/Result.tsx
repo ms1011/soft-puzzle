@@ -33,7 +33,14 @@ export function Result({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold>결과</Text>
+      <Box borderStyle="double" borderColor="yellow" paddingX={2} marginBottom={1}>
+        <Box flexDirection="column" alignItems="center">
+          <Text bold color="yellow">
+            ★ 게임 종료 ★
+          </Text>
+          <Text bold>최종 결과</Text>
+        </Box>
+      </Box>
       {ranking.map((entry, i) => (
         <Text key={entry.nickname}>
           {i + 1}위 {entry.nickname} — {entry.detail}

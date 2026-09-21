@@ -5,6 +5,7 @@ import {
   BlackjackEngine,
   YachtEngine,
   OneCardEngine,
+  MafiaEngine,
 } from '@soft-puzzle/core';
 import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent } from '@soft-puzzle/core';
 
@@ -25,6 +26,7 @@ const ENGINE_FACTORIES: Record<GameId, () => GameEngine> = {
   blackjack: () => new BlackjackEngine(),
   onecard: () => new OneCardEngine(),
   yacht: () => new YachtEngine(),
+  mafia: () => new MafiaEngine(),
 };
 
 const MAX_NICKNAME_LENGTH = 32;

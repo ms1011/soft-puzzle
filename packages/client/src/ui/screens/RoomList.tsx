@@ -103,7 +103,7 @@ export function RoomList({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold>방 목록</Text>
+      <Text bold>방 목록 ({rooms.length}개)</Text>
       {connecting && <Text dimColor>연결 중...</Text>}
       {!connecting && scanning && <Text dimColor>검색 중...</Text>}
       {!connecting && !scanning && rooms.length === 0 && !manualMode && (

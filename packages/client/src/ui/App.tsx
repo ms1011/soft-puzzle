@@ -20,6 +20,7 @@ import { ActionBar } from './game/ActionBar.js';
 import { BlackjackView } from './game/BlackjackView.js';
 import { OneCardView } from './game/OneCardView.js';
 import { YachtView } from './game/YachtView.js';
+import { MafiaView } from './game/MafiaView.js';
 import type { GameViewProps } from './game/types.js';
 
 export interface AppProps {
@@ -34,6 +35,7 @@ const GAME_VIEWS: Record<GameId, (props: GameViewProps) => React.JSX.Element> = 
   blackjack: BlackjackView,
   onecard: OneCardView,
   yacht: YachtView,
+  mafia: MafiaView,
 };
 
 /**
@@ -173,6 +175,11 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     setScreen('menu');
   }, []);
 
+  const handleChangeNickname = useCallback((): void => {
+    setNicknameError(undefined);
+    setScreen('nickname');
+  }, []);
+
   const refreshRooms = useCallback((): void => {
     setScanning(true);
     setRoomListError(undefined);
@@ -306,12 +313,20 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
 
   return (
     <Box flexDirection="column">
-      {screen === 'nickname' && <Nickname onSubmit={handleNicknameSubmit} error={nicknameError} />}
+      {screen === 'nickname' && (
+        <Nickname
+          initialValue={nickname}
+          onSubmit={handleNicknameSubmit}
+          error={nicknameError}
+          onCancel={nickname ? () => setScreen('menu') : undefined}
+        />
+      )}
 
       {screen === 'menu' && (
         <MainMenu
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
+          onChangeNickname={handleChangeNickname}
           onQuit={handleQuit}
           error={menuError}
         />

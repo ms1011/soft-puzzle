@@ -1,4 +1,4 @@
-export type GameId = 'blackjack' | 'onecard' | 'yacht';
+export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia';
 
 export type ClientMsg =
   | { type: 'join'; nickname: string }

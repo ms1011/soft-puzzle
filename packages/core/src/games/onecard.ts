@@ -2,7 +2,8 @@ import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
 import { makeDeck, rankOf, suitOf, type Card, type Suit } from '../card.js';
 import type { GameId, GameView } from '../protocol.js';
-import type { GameEngine, EngineAction, EngineEvent } from '../engine.js';
+import type { GameEngine, EngineAction, EngineEvent, FocusRoute } from '../engine.js';
+import { focusField } from '../engine.js';
 
 const HAND_SIZE = 7;
 const BUST_THRESHOLD = 15;
@@ -324,6 +325,16 @@ export class OneCardEngine implements GameEngine {
       // drawPile이 바닥나면 discard를 재셔플해 되돌리므로, 실제로 뽑을 수 있는 장수는 둘의 합이다.
       drawPileCount: this.drawPile.length + this.discard.length,
     };
+  }
+
+  /** 차례인 사람이 손패의 몇 번째 카드를 보고 있는지만 전원에게 알린다 — 카드 내용은 보내지 않는다. */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.ended || this.order[this.turnIdx] !== sender) return null;
+    if (target === null) return { to: 'all', target: null };
+    const index = focusField(target, 'index');
+    const handSize = this.hands.get(sender)?.length ?? 0;
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= handSize) return null;
+    return { to: 'all', target: { index } };
   }
 
   private yourActions(player: string): string[] {

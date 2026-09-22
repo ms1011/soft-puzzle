@@ -16,7 +16,8 @@ export {
 
 export { encodeMsg, NdjsonDecoder } from './ndjson.js';
 
-export type { EngineEvent, EngineAction, GameEngine, ChatRoute } from './engine.js';
+export type { EngineEvent, EngineAction, GameEngine, ChatRoute, FocusRoute } from './engine.js';
+export { focusField } from './engine.js';
 
 export { handValue, BlackjackEngine } from './games/blackjack.js';
 

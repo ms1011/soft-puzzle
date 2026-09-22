@@ -6,7 +6,9 @@ export type ChatChannel = 'all' | 'mafia' | 'dead';
 export type ClientMsg =
   | { type: 'join'; nickname: string }
   | { type: 'action'; name: string; arg?: unknown }
-  | { type: 'chat'; text: string };
+  | { type: 'chat'; text: string }
+  // 확정 전 커서. target의 모양은 게임마다 다르고 null은 "고민 중 아님"이다 — 서버가 엔진에 물어 검증·정리한다.
+  | { type: 'focus'; target: unknown };
 
 export interface GameView {
   phase: string;
@@ -31,7 +33,8 @@ export type ServerMsg =
       result?: { ranking: { nickname: string; detail: string }[] };
     }
   | { type: 'event'; text: string }
-  | { type: 'chat'; from: string; text: string; channel: ChatChannel };
+  | { type: 'chat'; from: string; text: string; channel: ChatChannel }
+  | { type: 'focus'; from: string; target: unknown };
 
 export interface RoomInfo {
   room: string;

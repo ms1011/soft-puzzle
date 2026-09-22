@@ -56,6 +56,8 @@ export class LiarEngine implements GameEngine {
       yourWord: player === this.liar ? '라이어 (제시어를 모릅니다)' : this.word,
       players: this.players,
       hasVoted: this.votes.has(player),
+      // 투표를 마친 사람만 알린다 — 누구를 찍었는지는 결과 공개 전까지 비밀이다.
+      voted: this.players.filter((p) => this.votes.has(p)),
     };
   }
   pendingPlayers(): string[] { return this.finished ? [] : this.players.filter((p) => !this.votes.has(p)); }

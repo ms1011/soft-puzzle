@@ -28,6 +28,16 @@ describe('new party games', () => {
     expect((game.getViewFor('a') as { turnPlayer: string | null }).turnPlayer).toBe('b');
   });
 
+  it('라이어 게임 view는 투표를 마친 사람만 알려주고 대상은 숨긴다', () => {
+    const game = new LiarEngine();
+    game.start(['a', 'b', 'c'], 'a', mulberry32(1));
+    expect((game.getViewFor('c') as { voted: string[] }).voted).toEqual([]);
+    game.handleAction('a', { name: 'vote', arg: 'b' });
+    const view = game.getViewFor('c') as { voted: string[] };
+    expect(view.voted).toEqual(['a']);
+    expect(view).not.toHaveProperty('votes'); // 누가 누구를 찍었는지는 실리지 않는다
+  });
+
   it('라이어 게임은 모든 투표가 끝나면 결과를 공개한다', () => {
     const game = new LiarEngine();
     const players = ['a', 'b', 'c'];

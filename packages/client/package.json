@@ -1,6 +1,6 @@
 {
   "name": "soft-puzzle",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "터미널에서 즐기는 LAN 파티 게임 9종",
   "type": "module",
   "license": "MIT",

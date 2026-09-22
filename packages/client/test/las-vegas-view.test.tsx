@@ -180,6 +180,36 @@ describe('LasVegasView', () => {
     unmount();
   });
 
+  it('내 차례에 고른 눈을 sendFocus로 보낸다', async () => {
+    const sendFocus = vi.fn();
+    const { unmount } = render(<LasVegasView {...baseProps({ sendFocus })} />);
+    await tick();
+    expect(sendFocus).toHaveBeenCalledWith({ face: 5 });
+    unmount();
+  });
+
+  it('다른 사람이 고민 중인 카지노에 그 사람이 건 뒤의 결과를 보여준다', () => {
+    const view = makeView({ yourActions: [], turnPlayer: '영희' });
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ view, focus: { 영희: { face: 1 } } })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('1번 2개 +1');
+    expect(frame.split('\n').some((l) => /영희\s+3 \$60k/.test(l))).toBe(true);
+    expect(frame).toContain('영희님이 1번에 1개 걸기를 고민 중');
+    unmount();
+  });
+
+  it('다른 사람의 선택으로 내 지폐가 무효가 되면 경고한다', () => {
+    const view = makeView({
+      yourActions: [],
+      turnPlayer: '영희',
+      casinos: makeView().casinos.map((c) => (c.number === 2 ? { ...c, dice: [{ nickname: '철수', count: 2 }] } : c)),
+    });
+    // 영희가 2(두 개)를 걸면 나(2개)와 동수가 되어 내 $50k가 사라진다.
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ view, focus: { 영희: { face: 2 } } })} />);
+    expect(lastFrame()).toContain('영희님이 2번에 2개 걸기를 고민 중 (걸면 내 $50k가 사라집니다)');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII·한글만 쓴다', () => {
     const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

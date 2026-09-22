@@ -218,6 +218,33 @@ describe('YutView', () => {
     unmount();
   });
 
+  it('이동 단계에서 고르는 수를 sendFocus로 보낸다', async () => {
+    const sendFocus = vi.fn();
+    const { unmount } = render(<YutView {...baseProps({ view: moveView(), sendFocus })} />);
+    await tick();
+    expect(sendFocus).toHaveBeenCalledWith({ throwIndex: 0, piece: 0 });
+    unmount();
+  });
+
+  it('다른 사람이 고민 중인 수의 경로·도착 칸을 판에 보여주고 문장으로 알린다', () => {
+    const view = moveView({ yourActions: [], turnPlayer: '영희', moves: [] });
+    const focus = { 영희: { throwIndex: 0, piece: 0, to: 27, path: [27] } };
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view, focus })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame.split('\n').slice(0, 11).join('\n')).toContain('*');
+    expect(frame).toContain('영희님이 [걸] 말1(2개) → * 칸 고민 중');
+    unmount();
+  });
+
+  it('다른 사람이 내 말이 있는 칸을 노리면 경고한다', () => {
+    // 철수(나)의 말1은 3번 칸에 있다.
+    const view = moveView({ yourActions: [], turnPlayer: '영희', moves: [] });
+    const focus = { 영희: { throwIndex: 1, piece: 2, to: 3, path: [1, 2, 3] } };
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view, focus })} />);
+    expect(lastFrame()).toContain('영희님이 [개] 새 말 → * 칸 고민 중 (내 말을 잡을 수 있습니다!)');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII와 한글만 쓴다', () => {
     for (const view of [throwView(), moveView()]) {
       const { lastFrame, unmount } = render(<YutView {...baseProps({ view, theme: { unicode: false } })} />);

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import { lasVegasPayout } from '@soft-puzzle/core';
+import { useFocusBroadcast } from '../focus.js';
 import { renderDie } from '../../art/dice.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { sep, turnGlyph } from './glyphs.js';
@@ -37,8 +38,11 @@ interface LasVegasGameView {
 const CASINO_COL = 13;
 /** 카지노 칸 안 닉네임 표시 폭 상한 — " 닉네임 개수 $90k"(1+5+1+1+1+4=13)가 칸 안에 들어가야 한다. */
 const CASINO_NICK_CAP = 5;
-/** 다른 플레이어 색(참가 순서대로). "나"는 다른 화면들과 같이 cyan, 노랑은 내 선택·미리보기 강조에 쓴다. */
-const OTHER_COLORS = ['magenta', 'green', 'blue', 'red', 'white'];
+/**
+ * 다른 플레이어 색(참가 순서대로). "나"는 다른 화면들과 같이 cyan이고, 노랑·자홍은 각각 내 선택과
+ * 다른 사람이 고민 중인 선택의 미리보기 강조에 쓰므로 여기서 뺀다.
+ */
+const OTHER_COLORS = ['green', 'blue', 'red', 'white', 'gray'];
 /** 플레이어 줄의 닉네임 표시 폭 상한. */
 const PLAYER_NICK_CAP = 12;
 const YOU_SUFFIX = ' (나)';
@@ -121,7 +125,7 @@ function bestFace(dice: number[]): number | undefined {
  * 카지노 6곳(세로 칸 — 지폐 목록과 플레이어별 주사위 수), 플레이어 목록, 조작 힌트 순이다.
  * 내 턴인지는 오직 yourActions에 'place'가 있는지로 판단한다.
  */
-export function LasVegasView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
+export function LasVegasView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
   const v = view as unknown as LasVegasGameView;
   const canPlace = v.yourActions.includes('place');
   const dice = [...(v.dice ?? [])].sort((a, b) => a - b);
@@ -151,7 +155,17 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
     }
   });
 
-  const highlight = canPlace ? face : undefined;
+  useFocusBroadcast(sendFocus, canPlace && face !== undefined ? { face } : null, view);
+  // 차례인 다른 사람이 고민 중인 눈 — 내 차례의 선택과 같은 방식으로 카지노에 미리 반영해 보여준다.
+  const theirFace = ((): number | undefined => {
+    if (canPlace || v.turnPlayer === null || v.turnPlayer === you) return undefined;
+    const f = (focus?.[v.turnPlayer] as { face?: unknown } | undefined)?.face;
+    return typeof f === 'number' && faces.includes(f) ? f : undefined;
+  })();
+  const highlight = canPlace ? face : theirFace;
+  /** 지금 미리보기 중인 사람(나 또는 차례인 다른 사람). */
+  const placer = canPlace ? you : theirFace !== undefined ? v.turnPlayer! : undefined;
+  const previewColor = canPlace ? 'yellow' : 'magenta';
   const fitNick = (nick: string, cap: number): string => truncateDisplay(nick, cap);
 
   // 주사위 아트: 선택한 눈의 주사위는 이중선(ascii는 #) 테두리로 그린다. 8개면 79칼럼.
@@ -172,8 +186,9 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
 
   const maxBills = Math.max(1, ...v.casinos.map((c) => c.bills.length));
 
-  // 내가 고른 눈을 걸면 그 카지노에 놓일 주사위 수 — 그 카지노만 건 뒤의 결과로 미리 보여준다.
-  const placing = highlight !== undefined ? { nickname: you, count: dice.filter((d) => d === highlight).length } : undefined;
+  // 고른 눈(내 선택 또는 차례인 사람이 고민 중인 눈)을 걸면 그 카지노에 놓일 주사위 수 — 그 카지노만
+  // 건 뒤의 결과로 미리 보여준다.
+  const placing = highlight !== undefined && placer !== undefined ? { nickname: placer, count: dice.filter((d) => d === highlight).length } : undefined;
   const standingsOf = new Map(v.casinos.map((c) => [c.number, standings(c, c.number === highlight ? placing : undefined)]));
   const maxEntries = Math.max(1, ...[...standingsOf.values()].map((s) => s.length));
 
@@ -195,6 +210,16 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
     return `${head}받지 못함`;
   }
 
+  /** 다른 사람이 고민 중인 선택을 한 문장으로. 그 선택으로 내가 받을 지폐가 사라지면 경고를 붙인다. */
+  function theirsText(): string | undefined {
+    if (canPlace || theirFace === undefined || placing === undefined) return undefined;
+    const casino = v.casinos.find((c) => c.number === theirFace);
+    const before = casino ? standings(casino).find((s) => s.nickname === you)?.bill : undefined;
+    const after = standingsOf.get(theirFace)?.find((s) => s.nickname === you)?.bill;
+    const threat = before !== undefined && after === undefined ? ` (걸면 내 ${shortMoney(before)}가 사라집니다)` : '';
+    return `${fitNick(placing.nickname, PLAYER_NICK_CAP)}님이 ${theirFace}번에 ${placing.count}개 걸기를 고민 중${threat}`;
+  }
+
   /** 지난 라운드 정산을 카지노별로 한 줄에 — 사람별 합계만으로는 어디서 무엇을 받았는지 사라진다. */
   function lastPayoutText(): string | undefined {
     const paid = (v.lastPayout ?? []).filter((p) => p.awards.length > 0);
@@ -211,7 +236,7 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
     const marker = isSel ? (theme.unicode ? '▶' : '>') : ' ';
     return (
       <Box key={c.number} flexDirection="column" width={CASINO_COL} flexShrink={0}>
-        <Text bold={isSel} color={isSel ? 'yellow' : undefined}>
+        <Text bold={isSel} color={isSel ? previewColor : undefined}>
           {marker}
           {`${c.number}번`}
           {/* 카지노 번호가 곧 주사위 눈이라 [n]은 중복이다 — 대신 그 칸에 놓인 주사위 총수를 보여준다. */}
@@ -232,7 +257,7 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
           // 같은 개수가 둘 이상이면 정산 때 무효 — 흐리게 그리고 '무효'라고 적는다.
           const outcome = e.bill !== undefined ? ` ${shortMoney(e.bill)}` : e.tied ? ' 무효' : '';
           // 미리보기 중인 내 줄은 노랑으로 — 아직 건 게 아니라 "걸면 이렇게 된다"는 뜻이다.
-          const color = isYou && isSel ? 'yellow' : colorOf.get(e.nickname);
+          const color = isYou && isSel && canPlace ? 'yellow' : colorOf.get(e.nickname);
           return (
             <Text key={`d${i}`} dimColor={e.tied} color={color} bold={isYou}>
               {' '}
@@ -301,6 +326,12 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
       <Box marginTop={1}>
         {/* 미리보기 문장을 안내 줄 앞에 둔다 — 줄을 늘리지 않고, 좁으면 키 안내부터 잘린다. */}
         <Text wrap="truncate-end">
+          {theirsText() !== undefined && (
+            <Text bold color="magenta">
+              {theirsText()}
+              {'  '}
+            </Text>
+          )}
           {canPlace && previewText() !== undefined && (
             <Text bold color="yellow">
               {previewText()}

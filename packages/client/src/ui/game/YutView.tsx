@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import { truncateDisplay } from '../../art/width.js';
 import { cursorGlyph, sep, turnGlyph } from './glyphs.js';
+import { useFocusBroadcast } from '../focus.js';
 import type { GameViewProps } from './types.js';
 
 interface YutPieceView {
@@ -166,7 +167,7 @@ function renderBoard(marks: Map<number, StationMark>, theme: GameViewProps['them
  * 윷놀이 화면. 내 차례인지는 yourActions로만 판단한다(throw 또는 move). 합법 수(moves)와 그
  * 도착 칸은 엔진이 계산해 보내므로 클라이언트는 윷판 경로를 다시 계산하지 않는다.
  */
-export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
+export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
   const v = view as unknown as YutGameView;
   const canThrow = v.yourActions.includes('throw');
   const canMove = v.yourActions.includes('move');
@@ -217,26 +218,51 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
     }
   }
   const me = v.players.find((p) => p.nickname === you);
-  const selStation = selMove && me ? me.pieces[selMove.piece]?.station : undefined;
-  if (selMove && me && me.pieces[selMove.piece]?.state === 'board' && selStation !== undefined) {
-    const m = marks.get(selStation);
-    if (m) marks.set(selStation, { ...m, inverse: true });
-  }
-  // 지나가는 빈 칸에 경로 표시 — 모서리에서 지름길로 꺾는지가 윷놀이의 핵심 판단이다.
-  for (const s of selMove?.path ?? []) {
-    if (s !== selMove?.to && !marks.has(s)) marks.set(s, { label: theme.unicode ? '·' : '+', color: 'yellow' });
-  }
-  if (selMove && selMove.to !== 'done') {
-    // 도착 칸에는 항상 *를 붙인다 — 잡는 칸(상대 말이 있는 칸)도 반전만으로는 색 없는 터미널에서 안 보인다.
-    const existing = marks.get(selMove.to);
-    marks.set(selMove.to, existing ? { ...existing, label: `*${existing.label}`, inverse: true } : { label: '*', color: 'yellow', inverse: true });
+
+  // 내가 고르는 수는 서버로 보내고, 차례인 다른 사람이 고민 중인 수는 받아서 같은 방식으로 판에 그린다.
+  useFocusBroadcast(sendFocus, canMove && selMove ? { throwIndex: selMove.throwIndex, piece: selMove.piece } : null, view);
+  const theirs = ((): { owner: YutPlayerView; throwIndex: number; piece: number; to: number | 'done'; path: number[] } | null => {
+    const owner = v.players.find((p) => p.nickname === v.turnPlayer);
+    if (owner === undefined || owner.nickname === you) return null;
+    const f = focus?.[owner.nickname] as { throwIndex?: unknown; piece?: unknown; to?: unknown; path?: unknown } | undefined;
+    if (f === undefined || typeof f.throwIndex !== 'number' || typeof f.piece !== 'number') return null;
+    if (typeof f.to !== 'number' && f.to !== 'done') return null;
+    const path = Array.isArray(f.path) ? f.path.filter((s): s is number => typeof s === 'number') : [];
+    return { owner, throwIndex: f.throwIndex, piece: f.piece, to: f.to, path };
+  })();
+  const preview = selMove && me ? { owner: me, ...selMove, path: selMove.path ?? [], color: 'yellow' } : theirs ? { ...theirs, color: 'magenta' } : null;
+
+  if (preview) {
+    const from = preview.owner.pieces[preview.piece];
+    if (from?.state === 'board' && from.station !== undefined) {
+      const m = marks.get(from.station);
+      if (m) marks.set(from.station, { ...m, inverse: true });
+    }
+    // 지나가는 빈 칸에 경로 표시 — 모서리에서 지름길로 꺾는지가 윷놀이의 핵심 판단이다.
+    for (const s of preview.path) {
+      if (s !== preview.to && !marks.has(s)) marks.set(s, { label: theme.unicode ? '·' : '+', color: preview.color });
+    }
+    if (preview.to !== 'done') {
+      // 도착 칸에는 항상 *를 붙인다 — 잡는 칸(상대 말이 있는 칸)도 반전만으로는 색 없는 터미널에서 안 보인다.
+      const existing = marks.get(preview.to);
+      marks.set(preview.to, existing ? { ...existing, label: `*${existing.label}`, inverse: true } : { label: '*', color: preview.color, inverse: true });
+    }
   }
   const board = renderBoard(marks, theme);
 
-  function pieceLabel(m: YutMoveView): string {
-    const pc = me?.pieces[m.piece];
+  /** 움직이는 말 표시 — 업힌 수는 그 말과 같은 칸에 있는 owner의 말 수다. */
+  function pieceLabel(m: { piece: number }, owner: YutPlayerView | undefined = me): string {
+    const pc = owner?.pieces[m.piece];
     if (!pc || pc.state === 'home') return '새 말';
-    return m.stack > 1 ? `말${m.piece + 1}(${m.stack}개)` : `말${m.piece + 1}`;
+    const stack = owner!.pieces.filter((o) => o.state === 'board' && o.station === pc.station).length;
+    return stack > 1 ? `말${m.piece + 1}(${stack}개)` : `말${m.piece + 1}`;
+  }
+
+  /** 다른 사람이 고민 중인 수를 한 문장으로. 도착 칸에 내 말이 있으면 경고를 붙인다. */
+  function theirsText(t: NonNullable<typeof theirs>): string {
+    const dest = t.to === 'done' ? '나기(완주)' : (STATION_NAMES[t.to] ?? '* 칸');
+    const threatened = t.to !== 'done' && (me?.pieces.some((pc) => pc.state === 'board' && pc.station === t.to) ?? false);
+    return `${truncateDisplay(t.owner.nickname, NICK_CAP)}님이 [${v.throws[t.throwIndex]?.name ?? '?'}] ${pieceLabel(t, t.owner)} ${arrow} ${dest} 고민 중${threatened ? ' (내 말을 잡을 수 있습니다!)' : ''}`;
   }
 
   function destLabel(m: YutMoveView): string {
@@ -342,7 +368,12 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
             </Text>
           </>
         )}
-        {!canThrow && !canMove && v.turnPlayer !== null && (
+        {!canThrow && !canMove && v.turnPlayer !== null && theirs !== null && (
+          <Text color="magenta" wrap="truncate-end">
+            {theirsText(theirs)}
+          </Text>
+        )}
+        {!canThrow && !canMove && v.turnPlayer !== null && theirs === null && (
           <Text dimColor wrap="truncate-end">
             {truncateDisplay(v.turnPlayer, NICK_CAP)}님의 차례입니다.
           </Text>

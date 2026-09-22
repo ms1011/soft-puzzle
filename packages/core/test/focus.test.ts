@@ -3,6 +3,8 @@ import { OneCardEngine } from '../src/games/onecard.js';
 import { DavinciEngine } from '../src/games/davinci.js';
 import { YachtEngine } from '../src/games/yacht.js';
 import { MafiaEngine } from '../src/games/mafia.js';
+import { YutEngine } from '../src/games/yut.js';
+import { LasVegasEngine } from '../src/games/lasVegas.js';
 import { mulberry32 } from '../src/rng.js';
 
 describe('OneCardEngine.focusRoute', () => {
@@ -103,5 +105,52 @@ describe('MafiaEngine.focusRoute', () => {
     expect((e.getViewFor(mafia[0]!) as { phase: string }).phase).toBe('day');
     expect(e.focusRoute(mafia[0]!, { target: citizens[1]! })).toBeNull();
     expect(e.focusRoute(citizens[1]!, { target: mafia[0]! })).toBeNull();
+  });
+});
+
+describe('YutEngine.focusRoute', () => {
+  /** 걸만 나오는 rng로 시작해 a가 던진 뒤 이동 단계로 보낸다. */
+  function moving() {
+    const e = new YutEngine();
+    // 윷가락 값: 0.1 = 배, 0.9 = 등. 걸 = 배 3개(0번 가락 포함) + 등 1개.
+    const seq = [0.1, 0.1, 0.1, 0.9];
+    let i = 0;
+    e.start(['a', 'b'], 'a', () => seq[i++ % seq.length]!);
+    e.handleAction('a', { name: 'throw' });
+    return e;
+  }
+
+  it('합법 수를 고르는 중이면 도착 칸·경로까지 정리해 전원에게 보낸다', () => {
+    expect(moving().focusRoute('a', { throwIndex: 0, piece: 0, junk: 1 })).toEqual({
+      to: 'all',
+      target: { throwIndex: 0, piece: 0, to: 3, path: [1, 2, 3] },
+    });
+  });
+
+  it('합법 수가 아니거나, 던지는 단계거나, 차례가 아니면 null', () => {
+    const e = moving();
+    expect(e.focusRoute('a', { throwIndex: 5, piece: 0 })).toBeNull();
+    expect(e.focusRoute('b', { throwIndex: 0, piece: 0 })).toBeNull();
+    const fresh = new YutEngine();
+    fresh.start(['a', 'b'], 'a', () => 0.1);
+    expect(fresh.focusRoute('a', { throwIndex: 0, piece: 0 })).toBeNull();
+  });
+});
+
+describe('LasVegasEngine.focusRoute', () => {
+  function started() {
+    const e = new LasVegasEngine();
+    e.start(['a', 'b'], 'a', () => 0.99); // 모든 주사위가 6
+    return e;
+  }
+
+  it('굴린 눈 중 고르는 눈을 { face }로 전원에게 보낸다', () => {
+    expect(started().focusRoute('a', { face: 6, junk: true })).toEqual({ to: 'all', target: { face: 6 } });
+  });
+
+  it('굴리지 않은 눈·차례 아님은 null', () => {
+    const e = started();
+    expect(e.focusRoute('a', { face: 1 })).toBeNull();
+    expect(e.focusRoute('b', { face: 6 })).toBeNull();
   });
 });

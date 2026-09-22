@@ -1,6 +1,7 @@
 import { shuffle, type Rng } from '../rng.js';
 import type { GameId, GameView } from '../protocol.js';
-import type { GameEngine, EngineAction, EngineEvent } from '../engine.js';
+import type { GameEngine, EngineAction, EngineEvent, FocusRoute } from '../engine.js';
+import { focusField } from '../engine.js';
 
 /** 카지노는 주사위 눈 1~6에 하나씩 대응한다. */
 export const CASINO_COUNT = 6;
@@ -240,6 +241,15 @@ export class LasVegasEngine implements GameEngine {
       })),
       lastPayout: this.lastPayout ? this.lastPayout.map((p) => ({ casino: p.casino, awards: [...p.awards] })) : null,
     };
+  }
+
+  /** 차례인 사람이 굴린 눈 중 어느 카지노에 걸지 고민하는지 전원에게 알린다. */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.finished || this.order[this.turnIdx] !== sender) return null;
+    if (target === null) return { to: 'all', target: null };
+    const face = focusField(target, 'face');
+    if (typeof face !== 'number' || !this.rolled.includes(face)) return null;
+    return { to: 'all', target: { face } };
   }
 
   pendingPlayers(): string[] {

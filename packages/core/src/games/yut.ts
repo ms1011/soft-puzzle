@@ -1,6 +1,7 @@
 import type { Rng } from '../rng.js';
 import type { GameId, GameView } from '../protocol.js';
-import type { GameEngine, EngineAction, EngineEvent } from '../engine.js';
+import type { GameEngine, EngineAction, EngineEvent, FocusRoute } from '../engine.js';
+import { focusField } from '../engine.js';
 
 /**
  * 윷판 칸 번호(총 29칸).
@@ -411,6 +412,20 @@ export class YutEngine implements GameEngine {
       lastThrow: this.lastThrow ? { ...this.lastThrow, sticks: [...this.lastThrow.sticks] } : null,
       moves: this.legalMoves(player),
     };
+  }
+
+  /**
+   * 차례인 사람이 고르고 있는 수(윷·말)를 전원에게 알린다. 합법 수는 차례인 사람에게만 보내므로
+   * 다른 사람이 도착 칸·경로를 알 수 있게 엔진이 계산해 함께 싣는다(판은 원래 모두에게 공개다).
+   */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.finished || this.current() !== sender || this.credits > 0) return null;
+    if (target === null) return { to: 'all', target: null };
+    const throwIndex = focusField(target, 'throwIndex');
+    const piece = focusField(target, 'piece');
+    const move = this.legalMoves(sender).find((m) => m.throwIndex === throwIndex && m.piece === piece);
+    if (move === undefined) return null;
+    return { to: 'all', target: { throwIndex: move.throwIndex, piece: move.piece, to: move.to, path: [...move.path] } };
   }
 
   private yourActions(player: string): string[] {

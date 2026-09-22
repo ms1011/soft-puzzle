@@ -59,6 +59,8 @@ export interface YutMove {
   stack: number;
   /** 도착 칸에서 잡게 되는 상대 말 수. */
   capture: number;
+  /** 이번 이동에서 밟는 칸(출발 칸 제외, 도착 칸 포함). 나는 이동은 참먹이 전까지만 담는다. */
+  path: number[];
 }
 
 /**
@@ -117,27 +119,30 @@ function stepForward(from: number, prev: number | undefined, first: boolean): nu
  * 판에 없는 말은 참먹이(0)에서 출발한다. 빽도(-1)는 판 위의 말에만 쓸 수 있다(null 반환).
  * 참먹이(0)에 "도달"하면 그 즉시 나기(done) — 남은 걸음은 버린다(단순화).
  */
-function computeMove(piece: Piece, steps: number): { to: number | 'done'; trail: number[] } | null {
+function computeMove(piece: Piece, steps: number): { to: number | 'done'; trail: number[]; path: number[] } | null {
   if (piece.where === 'done') return null;
   if (steps < 0) {
     if (piece.where !== 'board') return null;
     const trail = [...piece.trail];
     if (trail.length >= 2) {
       trail.pop();
-      return { to: trail[trail.length - 1]!, trail };
+      const to = trail[trail.length - 1]!;
+      return { to, trail, path: [to] };
     }
     const to = PRED[piece.station]!;
-    return { to, trail: [to] };
+    return { to, trail: [to], path: [to] };
   }
   const trail = piece.where === 'home' ? [0] : [...piece.trail];
   let cur = piece.where === 'home' ? 0 : piece.station;
+  const path: number[] = [];
   for (let i = 0; i < steps; i++) {
     const next = stepForward(cur, trail[trail.length - 2], i === 0);
-    if (next === FINISH) return { to: 'done', trail: [] };
+    if (next === FINISH) return { to: 'done', trail: [], path };
     trail.push(next);
+    path.push(next);
     cur = next;
   }
-  return { to: cur, trail };
+  return { to: cur, trail, path };
 }
 
 /** 칸 station에 멈춰 있는 말이 나기까지 필요한 최소 걸음 수(순위 동점 판정용 진행도 계산). */
@@ -375,7 +380,7 @@ export class YutEngine implements GameEngine {
             capture += this.pieces.get(other)!.filter((o) => o.where === 'board' && o.station === res.to).length;
           }
         }
-        moves.push({ throwIndex, piece, to: res.to, stack, capture });
+        moves.push({ throwIndex, piece, to: res.to, stack, capture, path: res.path });
       });
     });
     return moves;

@@ -208,6 +208,16 @@ describe('YutView', () => {
     ascii.unmount();
   });
 
+  it('선택한 이동이 지나가는 빈 칸을 판에 ·로 표시한다(도착 칸은 *)', () => {
+    // 걸로 말1(3번 칸) → 4, 5, 6. 지나가는 4·5는 ·, 도착 6은 *.
+    const view = moveView({ moves: [{ throwIndex: 0, piece: 0, to: 6, stack: 1, capture: 0, path: [4, 5, 6] }] });
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view })} />);
+    const board = (lastFrame() ?? '').split('\n').slice(0, 11).join('\n');
+    expect(board.match(/·/g)).toHaveLength(2);
+    expect(board).toContain('*');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII와 한글만 쓴다', () => {
     for (const view of [throwView(), moveView()]) {
       const { lastFrame, unmount } = render(<YutView {...baseProps({ view, theme: { unicode: false } })} />);

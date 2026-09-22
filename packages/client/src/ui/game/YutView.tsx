@@ -25,6 +25,8 @@ interface YutMoveView {
   to: number | 'done';
   stack: number;
   capture: number;
+  /** 이번 이동에서 밟는 칸(도착 칸 포함). 이 필드가 없던 옛 서버와 붙으면 undefined다. */
+  path?: number[];
 }
 
 interface YutGameView {
@@ -219,6 +221,10 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
   if (selMove && me && me.pieces[selMove.piece]?.state === 'board' && selStation !== undefined) {
     const m = marks.get(selStation);
     if (m) marks.set(selStation, { ...m, inverse: true });
+  }
+  // 지나가는 빈 칸에 경로 표시 — 모서리에서 지름길로 꺾는지가 윷놀이의 핵심 판단이다.
+  for (const s of selMove?.path ?? []) {
+    if (s !== selMove?.to && !marks.has(s)) marks.set(s, { label: theme.unicode ? '·' : '+', color: 'yellow' });
   }
   if (selMove && selMove.to !== 'done') {
     // 도착 칸에는 항상 *를 붙인다 — 잡는 칸(상대 말이 있는 칸)도 반전만으로는 색 없는 터미널에서 안 보인다.

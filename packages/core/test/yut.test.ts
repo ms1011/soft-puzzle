@@ -125,7 +125,7 @@ describe('YutEngine', () => {
     expect(v.yourActions).toEqual(['move']);
     expect(v.throws).toEqual([{ name: '걸', steps: 3 }]);
     // 집의 말은 대표 하나만 목록에 오른다.
-    expect(v.moves).toEqual([{ throwIndex: 0, piece: 0, to: 3, stack: 1, capture: 0 }]);
+    expect(v.moves).toEqual([{ throwIndex: 0, piece: 0, to: 3, stack: 1, capture: 0, path: [1, 2, 3] }]);
   });
 
   it('윷·모가 나오면 한 번 더 던지고, 결과가 쌓인다', () => {
@@ -244,6 +244,30 @@ describe('YutEngine', () => {
       expect(destinations(at(19, [19], '도'), 'a', 0)).toEqual(['done']);
       expect(destinations(at(18, [18], '모'), 'a', 0)).toEqual(['done']);
       expect(destinations(at(28, [28], '도'), 'a', 0)).toEqual(['done']);
+    });
+  });
+
+  describe('이동 경로(path)', () => {
+    function paths(station: number | 'home', trail: number[] | undefined, ...names: YutThrowName[]): (number[] | undefined)[] {
+      const e = new YutEngine();
+      e.start(['a', 'b'], 'a', scripted());
+      if (station !== 'home') place(e, 'a', 0, station, trail);
+      setPending(e, ...names);
+      return (view(e, 'a').moves as (MoveView & { path?: number[] })[]).filter((m) => m.piece === 0).map((m) => m.path);
+    }
+
+    it('이번 이동에서 밟는 칸을 차례대로 싣는다(출발 칸은 빼고 도착 칸은 넣는다)', () => {
+      expect(paths('home', undefined, '걸')).toEqual([[1, 2, 3]]);
+      // 모서리 5에 멈춘 말은 대각선으로 꺾는다.
+      expect(paths(5, [0, 1, 2, 3, 4, 5], '걸')).toEqual([[20, 21, 22]]);
+    });
+
+    it('나는 이동은 참먹이 전까지 밟은 칸만 싣는다', () => {
+      expect(paths(18, [18], '모')).toEqual([[19]]);
+    });
+
+    it('빽도는 되돌아간 칸 하나다', () => {
+      expect(paths(22, [10, 25, 26, 22], '빽도')).toEqual([[26]]);
     });
   });
 

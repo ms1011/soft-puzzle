@@ -171,6 +171,11 @@ describe('OneCardView', () => {
     }
   });
 
+  it('renderLiftedHand 조각은 빨간 카드(♥♦·빨간 조커)에만 red 표시를 단다', () => {
+    const rows = renderLiftedHand(['KH', '3S', 'JR'], 1, [true, true, true], { unicode: true });
+    for (const row of rows) expect(row.map((seg) => seg.red)).toEqual([true, false, true]);
+  });
+
   it('무늬 선택 팝업에서 Esc를 누르면 취소되고(안내 문구에도 Esc 취소가 나온다) send는 호출되지 않는다', async () => {
     const view = playingView({ you: { hand: ['7S', '3S'], handCount: 2, isTurn: true }, top: '9S' });
     const send = vi.fn();

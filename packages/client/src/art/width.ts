@@ -36,3 +36,17 @@ export function displayWidth(str: string): number {
   }
   return width;
 }
+
+/** 표시 폭(한글 2칼럼) 기준으로 maxWidth를 넘지 않게 앞에서부터 잘라낸다 — 고정 폭 칸에 닉네임을 넣을 때 쓴다. */
+export function truncateDisplay(str: string, maxWidth: number): string {
+  if (displayWidth(str) <= maxWidth) return str;
+  let result = '';
+  let w = 0;
+  for (const ch of str) {
+    const cw = displayWidth(ch);
+    if (w + cw > maxWidth) break;
+    result += ch;
+    w += cw;
+  }
+  return result;
+}

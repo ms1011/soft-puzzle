@@ -3,7 +3,9 @@ import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import type { Card, Suit } from '@soft-puzzle/core';
 import { canPlay, rankOf } from '@soft-puzzle/core';
-import { renderCard } from '../../art/cards.js';
+import { isRedCard, renderCard, renderHandSegments } from '../../art/cards.js';
+import { CardRows } from './CardRows.js';
+import { turnGlyph } from './glyphs.js';
 import type { GameViewProps } from './types.js';
 
 /** cards.ts의 카드 아트 상수(테두리 사이 5칸 + 좌우 테두리 2칸)를 그대로 따른다 — 겹친 손패에서
@@ -47,6 +49,7 @@ interface OneCardGameView {
 export interface HandSegment {
   text: string;
   playable: boolean;
+  red: boolean;
 }
 
 /**
@@ -80,10 +83,11 @@ export function renderLiftedHand(
     const lines = renderCard(card, theme);
     const sliceLine = (line: string): string => (full ? line : [...line].slice(0, OVERLAP_WIDTH).join(''));
     const offset = isSelected ? 0 : 1;
+    const red = isRedCard(card);
     for (let r = 0; r < rows.length; r++) {
       const cardRow = r - offset;
       const text = cardRow >= 0 && cardRow < CARD_HEIGHT ? sliceLine(lines[cardRow]) : ' '.repeat(width);
-      rows[r].push({ text, playable: playable[i] ?? true });
+      rows[r].push({ text, playable: playable[i] ?? true, red });
     }
   });
   return rows;
@@ -185,34 +189,28 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
           {v.declaredSuit !== null && `  무늬: ${suitGlyph(v.declaredSuit, theme.unicode)}`}
           {v.attackStack > 0 && `  ${attackGlyph}+${v.attackStack}`}
         </Text>
-        {renderCard(v.top, theme).map((line, i) => (
-          <Text key={i}>{line}</Text>
-        ))}
+        <CardRows rows={renderHandSegments([v.top], theme)} />
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
         <Text bold>상대 손패</Text>
         <Text>
-          {v.others.map((o) => `${o.isTurn ? (theme.unicode ? '▶' : '>') : theme.unicode ? '·' : '-'} ${o.nickname} ${o.handCount}장`).join('  ')}
+          {v.others.map((o) => `${o.isTurn ? turnGlyph(theme) : theme.unicode ? '·' : '-'} ${o.nickname} ${o.handCount}장`).join('  ')}
         </Text>
       </Box>
 
       <Box flexDirection="column">
         <Text bold>
-          {you} (나){v.you.isTurn ? (theme.unicode ? ' ◀' : ' <') : ''}
+          {you} (나){v.you.isTurn ? ` ${turnGlyph(theme)}` : ''}
         </Text>
         {hand.length === 0 ? (
           <Text dimColor>(손패 없음)</Text>
         ) : (
-          renderLiftedHand(hand, cursor, playableFlags, theme).map((segments, r) => (
-            <Text key={r}>
-              {segments.map((seg, i) => (
-                <Text key={i} dimColor={!seg.playable}>
-                  {seg.text}
-                </Text>
-              ))}
-            </Text>
-          ))
+          <CardRows
+            rows={renderLiftedHand(hand, cursor, playableFlags, theme).map((row) =>
+              row.map((seg) => ({ ...seg, dim: !seg.playable })),
+            )}
+          />
         )}
       </Box>
 

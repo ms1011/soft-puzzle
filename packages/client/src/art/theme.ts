@@ -14,7 +14,8 @@ export interface Theme {
  * 규칙:
  *   1. argv 어디든 '--ascii'가 있으면 무조건 unicode:false.
  *   2. 그 외: platform이 'win32'이고, Windows Terminal(WT_SESSION)도
- *      ConEmu(ConEmuANSI)도 아니면 unicode:false (구형 conhost로 간주).
+ *      ConEmu(ConEmuANSI)도, VS Code 통합 터미널(TERM_PROGRAM=vscode, xterm.js 기반이라
+ *      박스 문자·무늬 기호를 1칸으로 제대로 그린다)도 아니면 unicode:false (구형 conhost로 간주).
  *   3. 그 외에는 unicode:true.
  *
  * platform은 두 필수 인자(argv, env)에 포함되지 않으므로 세 번째 선택 인자로 받는다.
@@ -29,7 +30,8 @@ export function detectTheme(
   if (argv.includes('--ascii')) {
     return { unicode: false };
   }
-  const isModernWindowsTerminal = Boolean(env.WT_SESSION) || Boolean(env.ConEmuANSI);
+  const isModernWindowsTerminal =
+    Boolean(env.WT_SESSION) || Boolean(env.ConEmuANSI) || env.TERM_PROGRAM === 'vscode';
   if (platform === 'win32' && !isModernWindowsTerminal) {
     return { unicode: false };
   }

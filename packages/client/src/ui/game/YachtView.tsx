@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import type { YachtCategory } from '@soft-puzzle/core';
+import { scoreCategory } from '@soft-puzzle/core';
 import { renderDice } from '../../art/dice.js';
-import { displayWidth } from '../../art/width.js';
+import { displayWidth, truncateDisplay } from '../../art/width.js';
 import type { GameViewProps } from './types.js';
 
 /** 13칸의 고정 표시 순서와 브리프가 지정한 한글 라벨. core의 CATEGORY_LABELS(이벤트 로그용
@@ -65,27 +66,26 @@ function padDisplay(str: string, width: number): string {
 }
 
 /**
- * 표시 폭 기준으로 잘라낸다. 서버(Room)는 닉네임을 최대 32자(표시 폭 최대 64칼럼)까지
+ * 점수표 닉네임의 표시 폭 상한. 서버(Room)는 닉네임을 최대 32자(표시 폭 최대 64칼럼)까지
  * 허용하는데, 점수표는 최대 인원(MAX_PLAYERS=6)에서도 터미널 폭 안에 들어와야 한다 —
  * 리뷰에서 3인 80칼럼·6인 100칼럼 모두 표가 깨지는 것으로 실측됐다. 닉네임 표시 폭에
  * 상한을 두는 것이 그 1차 방어선이다.
  */
 const NICK_DISPLAY_CAP = 8;
-function truncateDisplay(str: string, maxWidth: number): string {
-  if (displayWidth(str) <= maxWidth) return str;
-  let result = '';
-  let w = 0;
-  for (const ch of str) {
-    const cw = displayWidth(ch);
-    if (w + cw > maxWidth) break;
-    result += ch;
-    w += cw;
-  }
-  return result;
-}
 
 /** "이게 나다" 표시 — 블랙잭·원카드와 같은 표기로 통일한다(리뷰 지적: 야추만 '*'를 썼다). */
 const YOU_SUFFIX = ' (나)';
+
+/** 턴마다 첫 굴림 뒤 리롤할 수 있는 횟수. 엔진이 턴 시작에 한 번 굴린 뒤 rollsLeft=2로 둔다. */
+const MAX_REROLLS = 2;
+
+/** 남은 굴림을 ●●○처럼 점으로 그린다(ascii는 [##-]). */
+function rollPips(rollsLeft: number, theme: GameViewProps['theme']): string {
+  const total = Math.max(MAX_REROLLS, rollsLeft);
+  const left = Math.max(0, rollsLeft);
+  if (theme.unicode) return '●'.repeat(left) + '○'.repeat(total - left);
+  return `[${'#'.repeat(left)}${'-'.repeat(total - left)}]`;
+}
 
 /**
  * 야추 게임 화면. dice/held/rollsLeft는 "현재 턴 플레이어"의 것이지 나만의 것이 아니다 —
@@ -176,9 +176,16 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
     return `${marker}${padDisplay(label, labelWidth)} ${cells}`;
   }
 
-  function scoreCell(p: YachtPlayerView, cat: YachtCategory): string {
+  // 주사위는 모두에게 공개된 "차례인 사람"의 것이므로, 그 사람의 빈 칸에만 지금 주사위로 받을
+  // 점수를 미리 보여준다(누가 보든 같다). 기록된 점수와 헷갈리지 않게 괄호로 감싸고 흐리게 그린다
+  // — 색이 없는 터미널에서도 괄호로 구분된다. 칸 최소 폭이 4라 최대 점수 (50)도 들어간다.
+  const diceReady = v.dice.length === 5 && v.dice.every((d) => d >= 1 && d <= 6);
+
+  function scoreCell(p: YachtPlayerView, cat: YachtCategory): { text: string; preview: boolean } {
     const score = p.sheet[cat];
-    return score === undefined ? '-' : String(score);
+    if (score !== undefined) return { text: String(score), preview: false };
+    if (p.isTurn && diceReady) return { text: `(${scoreCategory(v.dice, cat)})`, preview: true };
+    return { text: '-', preview: false };
   }
 
   function playerHeader(p: YachtPlayerView): string {
@@ -201,7 +208,9 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
               {line}
             </Text>
           ))}
-          <Text wrap="truncate-end">남은 굴림: {v.rollsLeft}회</Text>
+          <Text wrap="truncate-end">
+            남은 굴림: {rollPips(v.rollsLeft, theme)} {v.rollsLeft}회
+          </Text>
           {v.turnPlayer !== null && (
             <Text dimColor wrap="truncate-end">
               {v.turnPlayer}님의 차례
@@ -217,10 +226,18 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
           <Text>{rowLine(' ', '', headerCells)}</Text>
           {CATEGORY_ORDER.map((cat) => {
             const isCursorRow = cursorCat === cat;
-            const cells = v.players.map((p) => padDisplay(scoreCell(p, cat), colWidth(p))).join(' ');
             return (
               <Text key={cat} bold={isCursorRow}>
-                {rowLine(isCursorRow ? turnGlyph : ' ', CATEGORY_LABELS[cat], cells)}
+                {rowLine(isCursorRow ? turnGlyph : ' ', CATEGORY_LABELS[cat], '')}
+                {v.players.map((p, i) => {
+                  const cell = scoreCell(p, cat);
+                  return (
+                    <Text key={p.nickname} dimColor={cell.preview}>
+                      {i > 0 ? ' ' : ''}
+                      {padDisplay(cell.text, colWidth(p))}
+                    </Text>
+                  );
+                })}
               </Text>
             );
           })}

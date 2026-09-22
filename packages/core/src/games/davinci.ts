@@ -55,6 +55,7 @@ export class DavinciEngine implements GameEngine {
       phase: this.finished ? 'result' : 'guessing',
       yourActions: !this.finished && this.players[this.turn] === player ? ['guess'] : [],
       isTurn: this.players[this.turn] === player,
+      turnPlayer: this.finished ? null : (this.players[this.turn] ?? null),
       boards: this.players.map((p) => ({ nickname: p, eliminated: this.isEliminated(p), tiles: (this.tiles.get(p) ?? []).map((tile) => ({ value: p === player || tile.revealed ? tile.value : null, revealed: tile.revealed })) })),
     };
   }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
+import { scoreCategory } from '@soft-puzzle/core';
 import { YachtView } from '../src/ui/game/YachtView.js';
 import type { GameViewProps } from '../src/ui/game/types.js';
 import { renderAtWidth, findNonAsciiNonHangul } from './testUtils.js';
@@ -68,6 +69,27 @@ describe('YachtView', () => {
     expect(frame).toContain('영희');
     // 철수는 ones=1을 기록했고, 영희는 전부 미기록(빈 칸 '-')이다.
     expect(frame).toContain('-');
+    unmount();
+  });
+
+  it('차례인 사람의 빈 칸에만 지금 주사위로 받을 점수를 (괄호)로 미리 보여준다', () => {
+    const { lastFrame, unmount } = render(<YachtView {...baseProps()} />);
+    const lines = (lastFrame() ?? '').split('\n');
+    const expected = scoreCategory([1, 2, 3, 4, 5], 'largeStraight');
+    const largeLine = lines.find((line) => line.includes('L.스트레이트'))!;
+    expect(largeLine).toContain(`(${expected})`);
+    // 영희는 차례가 아니므로 미리보기 없이 빈 칸('-') 그대로다 — 괄호는 한 번만 나온다.
+    expect(largeLine.match(/\(/g)).toHaveLength(1);
+    // 이미 기록한 칸(철수 ones=1)은 미리보기가 아니라 기록된 점수다.
+    const onesLine = lines.find((line) => line.includes('1(에이스)'))!;
+    expect(onesLine).not.toContain('(1)');
+    unmount();
+  });
+
+  it('남은 굴림을 점으로도 보여준다', () => {
+    const view = turnView({ rollsLeft: 1 });
+    const { lastFrame, unmount } = render(<YachtView {...baseProps({ view })} />);
+    expect(lastFrame()).toContain('●○');
     unmount();
   });
 

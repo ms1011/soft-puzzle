@@ -18,6 +18,16 @@ describe('new party games', () => {
     expect((game.getViewFor('b') as { yourActions: string[] }).yourActions).toContain('guess');
   });
 
+  it('다빈치 코드 view는 모두에게 현재 차례 플레이어를 알려준다', () => {
+    const game = new DavinciEngine();
+    game.start(['a', 'b'], 'a', mulberry32(1));
+    expect((game.getViewFor('b') as { turnPlayer: string | null }).turnPlayer).toBe('a');
+    const tiles = (game.getViewFor('b') as { boards: { nickname: string; tiles: { value: number | null }[] }[] }).boards.find((item) => item.nickname === 'b')!.tiles;
+    const wrong = (tiles[0]!.value! + 1) % 12;
+    game.handleAction('a', { name: 'guess', arg: { player: 'b', index: 0, value: wrong } });
+    expect((game.getViewFor('a') as { turnPlayer: string | null }).turnPlayer).toBe('b');
+  });
+
   it('라이어 게임은 모든 투표가 끝나면 결과를 공개한다', () => {
     const game = new LiarEngine();
     const players = ['a', 'b', 'c'];

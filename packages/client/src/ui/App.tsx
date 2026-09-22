@@ -28,6 +28,7 @@ import { MafiaView } from './game/MafiaView.js';
 import { DavinciView } from './game/DavinciView.js';
 import { LiarView } from './game/LiarView.js';
 import { IndianPokerView } from './game/IndianPokerView.js';
+import { TurnTimer } from './game/TurnTimer.js';
 import type { GameViewProps } from './game/types.js';
 
 export interface AppProps {
@@ -93,7 +94,7 @@ function GameScreen({
   const View = GAME_VIEWS[game];
   return (
     <Box flexDirection="column">
-      {deadline !== undefined && <TurnTimer deadline={deadline} />}
+      {deadline !== undefined && <TurnTimer deadline={deadline} theme={theme} />}
       <View view={view} you={you} send={send} theme={theme} />
       {/* 요구사항 4: 행동 바는 항상 지금 view.yourActions에서만 나온다 — 하드코딩된 목록이
        * 아니다. ACTION_LABELS는 세 엔진이 실제로 쓰는 액션 이름을 미리 채운 한국어 사전이고,
@@ -101,17 +102,6 @@ function GameScreen({
       <ActionBar actions={view.yourActions} labels={ACTION_LABELS} />
     </Box>
   );
-}
-
-function TurnTimer({ deadline }: { deadline: number }): React.JSX.Element {
-  const [remaining, setRemaining] = useState(() => Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-  useEffect(() => {
-    const update = (): void => setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    update();
-    const timer = setInterval(update, 250);
-    return () => clearInterval(timer);
-  }, [deadline]);
-  return <Text color={remaining <= 15 ? 'red' : undefined}>⏱ 자동 처리까지 {remaining}초</Text>;
 }
 
 /**
@@ -441,11 +431,16 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
                   )}
 
                   <Box flexDirection="column" marginTop={1}>
-                    {eventLog.map((text, i) => (
-                      <Text key={i} dimColor>
-                        {text}
-                      </Text>
-                    ))}
+                    {/* 가장 최근 알림만 또렷하게 — "정답입니다!"·"탈락했습니다" 같은 방금 일어난 결과가
+                     * 지난 알림들 사이에 묻히지 않게 한다. */}
+                    {eventLog.map((text, i) => {
+                      const latest = i === eventLog.length - 1;
+                      return (
+                        <Text key={i} dimColor={!latest} bold={latest}>
+                          {text}
+                        </Text>
+                      );
+                    })}
                   </Box>
                 </>
               }

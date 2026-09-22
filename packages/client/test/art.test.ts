@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderCard, renderHand } from '../src/art/cards.js';
+import { renderCard, renderHand, renderHandSegments } from '../src/art/cards.js';
 import { renderDie, renderDice } from '../src/art/dice.js';
 import { detectTheme } from '../src/art/theme.js';
 import { displayWidth } from '../src/art/width.js';
@@ -80,6 +80,27 @@ describe('cards', () => {
   it('ascii 카드 뒷면은 #으로 채워진다', () => {
     const art = renderCard('back', ASCII);
     expect(art[1]).toBe('|#####|');
+  });
+});
+
+describe('renderHandSegments', () => {
+  it('조각을 이어 붙이면 renderHand와 같은 줄이 된다', () => {
+    const cards = ['KH', '3S', 'back', 'JR'] as const;
+    const rows = renderHandSegments([...cards], UNICODE);
+    expect(rows.map((row) => row.map((s) => s.text).join(''))).toEqual(renderHand([...cards], UNICODE));
+  });
+
+  it('하트·다이아·빨간 조커만 red 조각이다(뒷면·검은 무늬·검은 조커는 아님)', () => {
+    const rows = renderHandSegments(['KH', '3S', '5D', 'back', 'JB', 'JR'], UNICODE);
+    expect(rows[0]!.map((s) => s.red)).toEqual([true, false, true, false, false, true]);
+    // 모든 줄에서 같은 판정 — 카드 단위로 색을 입힌다.
+    for (const row of rows) expect(row.map((s) => s.red)).toEqual(rows[0]!.map((s) => s.red));
+  });
+
+  it('빈 손패면 5줄의 빈 조각 목록이다', () => {
+    const rows = renderHandSegments([], UNICODE);
+    expect(rows).toHaveLength(5);
+    for (const row of rows) expect(row).toEqual([]);
   });
 });
 
@@ -209,6 +230,10 @@ describe('theme', () => {
 
   it('win32 + ConEmuANSI → unicode', () => {
     expect(detectTheme([], { ConEmuANSI: 'ON' }, 'win32').unicode).toBe(true);
+  });
+
+  it('win32 + VS Code 통합 터미널(TERM_PROGRAM=vscode) → unicode', () => {
+    expect(detectTheme([], { TERM_PROGRAM: 'vscode' }, 'win32').unicode).toBe(true);
   });
 
   it('win32이라도 --ascii가 있으면 무조건 ascii', () => {

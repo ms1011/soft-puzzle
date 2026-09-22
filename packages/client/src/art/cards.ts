@@ -1,5 +1,5 @@
 import type { Card, Suit } from '@soft-puzzle/core';
-import { suitOf, rankOf } from '@soft-puzzle/core';
+import { suitOf, rankOf, isRed } from '@soft-puzzle/core';
 import type { Theme } from './theme.js';
 
 const CARD_HEIGHT = 5;
@@ -100,20 +100,34 @@ export function renderCard(card: Card | 'back', theme: Theme): string[] {
  * 그릴 게 없다"는 뜻으로 바로 쓸 수 있게.
  */
 export function renderHand(cards: (Card | 'back')[], theme: Theme): string[] {
-  if (cards.length === 0) {
-    return Array.from({ length: CARD_HEIGHT }, () => '');
-  }
+  return renderHandSegments(cards, theme).map((row) => row.map((seg) => seg.text).join(''));
+}
 
-  const rendered = cards.map((c) => renderCard(c, theme));
-  const lines = Array.from({ length: CARD_HEIGHT }, () => '');
+/** 카드 한 장이 한 줄에서 차지하는 조각. red는 그 조각을 빨간색으로 칠해야 하는지다. */
+export interface CardSegment {
+  text: string;
+  red: boolean;
+}
 
-  rendered.forEach((cardLines, i) => {
-    const isLast = i === rendered.length - 1;
-    cardLines.forEach((fullLine, row) => {
-      const slice = isLast ? fullLine : [...fullLine].slice(0, OVERLAP_WIDTH).join('');
-      lines[row] += slice;
+/** 뒷면이 아닌 카드 중 하트·다이아·빨간 조커만 빨간색이다. */
+export function isRedCard(card: Card | 'back'): boolean {
+  return card !== 'back' && isRed(card);
+}
+
+/**
+ * renderHand와 같은 겹침 규칙으로 그리되, 줄마다 카드별 조각으로 나눠 돌려준다. 색은 카드
+ * 단위로 입혀야 하는데(♥♦만 빨강) 합쳐진 문자열 한 줄로는 그럴 수 없기 때문이다 — 조각을
+ * 이어 붙이면 renderHand의 결과와 정확히 같다.
+ */
+export function renderHandSegments(cards: (Card | 'back')[], theme: Theme): CardSegment[][] {
+  const rows: CardSegment[][] = Array.from({ length: CARD_HEIGHT }, () => []);
+  cards.forEach((card, i) => {
+    const isLast = i === cards.length - 1;
+    const red = isRedCard(card);
+    renderCard(card, theme).forEach((fullLine, row) => {
+      const text = isLast ? fullLine : [...fullLine].slice(0, OVERLAP_WIDTH).join('');
+      rows[row]!.push({ text, red });
     });
   });
-
-  return lines;
+  return rows;
 }

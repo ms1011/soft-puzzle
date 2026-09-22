@@ -98,6 +98,13 @@ interface StationMark {
   inverse?: boolean;
 }
 
+/** 말 4개를 완주·판·집 순서의 아이콘으로 — 누가 앞서는지 숫자를 읽지 않아도 보인다. */
+export function pieceIcons(p: YutPlayerView, theme: GameViewProps['theme']): string {
+  const [done, board, home] = theme.unicode ? ['★', '●', '○'] : ['*', 'o', '.'];
+  const onBoard = p.pieces.length - p.home - p.finished;
+  return done.repeat(p.finished) + board.repeat(Math.max(0, onBoard)) + home.repeat(p.home);
+}
+
 /** 칸 하나의 3칼럼 라벨. 말이 있으면 기호(+업힌 수), 없으면 빈 칸 표시. */
 function padCell(s: string): string {
   return s.length === 1 ? ` ${s} ` : s.padEnd(3).slice(0, 3);
@@ -121,6 +128,8 @@ function renderBoard(marks: Map<number, StationMark>, theme: GameViewProps['them
     grid[y]![1 + 5 * y] = back;
     grid[y]![BOARD_COLS - 2 - 5 * y] = fwd;
   }
+  // 진행 방향: 참먹이(오른쪽 아래)에서 오른쪽 변을 따라 위로 올라간다.
+  grid[BOARD_ROWS - 2]![BOARD_COLS - 2] = theme.unicode ? '↑' : '^';
   // 줄마다 칸 시작 칼럼 → 칸 번호.
   const starts = new Map<string, number>();
   STATION_POS.forEach(([y, x], s) => starts.set(`${y}:${x - 1}`, s));
@@ -263,6 +272,10 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
             {truncateDisplay(p.nickname, NICK_CAP)}
             {p.nickname === you ? ' (나)' : ''}
             {p.isTurn ? ` ${turnGlyph(theme)}` : ''}
+            <Text color={MARKER_COLORS[p.marker]}>
+              {'  '}
+              {pieceIcons(p, theme)}
+            </Text>
             <Text dimColor>
               {'  '}집 {p.home}
               {sep(theme)}판 {p.pieces.length - p.home - p.finished}

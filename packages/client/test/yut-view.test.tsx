@@ -192,6 +192,22 @@ describe('YutView', () => {
     unmount();
   });
 
+  it('플레이어마다 말 4개를 완주·판·집 순서의 아이콘으로 보여준다', () => {
+    // 철수: 판 1(3번 칸), 집 2, 완주 1 → ★●○○
+    const { lastFrame, unmount } = render(<YutView {...baseProps()} />);
+    expect((lastFrame() ?? '').split('\n').find((l) => l.includes('철수'))).toContain('★●○○');
+    unmount();
+  });
+
+  it('판 오른쪽 변에 진행 방향(참먹이에서 위로)을 표시한다', () => {
+    const uni = render(<YutView {...baseProps()} />);
+    expect(uni.lastFrame()).toContain('↑');
+    uni.unmount();
+    const ascii = render(<YutView {...baseProps({ theme: { unicode: false } })} />);
+    expect(ascii.lastFrame()).toContain('^');
+    ascii.unmount();
+  });
+
   it('ascii 테마 출력은 ASCII와 한글만 쓴다', () => {
     for (const view of [throwView(), moveView()]) {
       const { lastFrame, unmount } = render(<YutView {...baseProps({ view, theme: { unicode: false } })} />);

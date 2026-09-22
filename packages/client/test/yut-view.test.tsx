@@ -6,7 +6,7 @@ import type { GameViewProps } from '../src/ui/game/types.js';
 import { renderAtWidth, findNonAsciiNonHangul } from './testUtils.js';
 
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 const HOME4 = [{ state: 'home' }, { state: 'home' }, { state: 'home' }, { state: 'home' }];

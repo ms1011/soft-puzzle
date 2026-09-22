@@ -7,7 +7,7 @@ import { renderAtWidth, findNonAsciiNonHangul } from './testUtils.js';
 import { displayWidth } from '../src/art/width.js';
 
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 function makeView(overrides: Record<string, unknown> = {}) {

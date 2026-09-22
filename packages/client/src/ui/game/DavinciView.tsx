@@ -9,7 +9,15 @@ import type { GameViewProps } from './types.js';
 
 interface Tile { value: number | null; revealed: boolean; }
 interface Board { nickname: string; eliminated?: boolean; tiles: Tile[]; }
-interface DavinciViewState { yourActions: string[]; isTurn: boolean; turnPlayer?: string | null; boards: Board[]; }
+interface GuessRecord { guesser: string; target: string; index: number; value: number; correct: boolean; }
+interface DavinciViewState {
+  yourActions: string[];
+  isTurn: boolean;
+  turnPlayer?: string | null;
+  boards: Board[];
+  /** 최근 추리 기록(오래된 것부터). 이 필드가 없던 옛 서버와 붙으면 undefined다. */
+  history?: GuessRecord[];
+}
 
 const MAX_VALUE = 11;
 /** 보드 한 칸 폭 — 타일 4장(4칸 + 사이 1칸 = 19)과 닉네임 줄이 들어가면서, 80칼럼에 3명씩 나란히
@@ -125,6 +133,19 @@ export function DavinciView({ view, you, send, theme, focus, sendFocus }: GameVi
         );
       })}
       </Box>
+      {/* 틀린 숫자는 추리에서 가장 중요한 단서라, 사라지는 알림 로그와 별개로 보드 아래에 남긴다. */}
+      {(v.history ?? []).length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>추리 기록</Text>
+          {(v.history ?? []).map((record, i) => (
+            <Text key={i} color={record.correct ? 'green' : undefined} dimColor={!record.correct}>
+              {'  '}
+              {record.guesser} {theme.unicode ? '→' : '->'} {record.target} {record.index + 1}번: {record.value}{' '}
+              {record.correct ? (theme.unicode ? '✓' : 'O') : theme.unicode ? '✗' : 'X'}
+            </Text>
+          ))}
+        </Box>
+      )}
       {aimed !== null && aimer !== null && (
         <Box marginTop={1}>
           {aimed.player === you ? (

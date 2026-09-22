@@ -137,6 +137,29 @@ describe('DavinciView', () => {
     unmount();
   });
 
+  it('최근 추리 기록을 정답·오답과 함께 보여준다', () => {
+    const view = davinciView({
+      history: [
+        { guesser: '영희', target: '철수', index: 0, value: 7, correct: false },
+        { guesser: '철수', target: '영희', index: 2, value: 3, correct: true },
+      ],
+    });
+    const { lastFrame, unmount } = render(<DavinciView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('영희 → 철수 1번: 7 ✗');
+    expect(frame).toContain('철수 → 영희 3번: 3 ✓');
+    unmount();
+  });
+
+  it('--ascii 테마에서 추리 기록도 ASCII·한글 외 문자가 새지 않는다', () => {
+    const view = davinciView({ history: [{ guesser: '영희', target: '철수', index: 0, value: 7, correct: false }] });
+    const { lastFrame, unmount } = render(<DavinciView {...baseProps({ view, theme: { unicode: false } })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('영희 -> 철수 1번: 7 X');
+    expect(findNonAsciiNonHangul(frame)).toEqual([]);
+    unmount();
+  });
+
   it('--ascii 테마에서 ASCII·한글 외 문자가 새지 않는다', () => {
     const { lastFrame, unmount } = render(<DavinciView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

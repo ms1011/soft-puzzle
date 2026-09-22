@@ -18,6 +18,33 @@ describe('new party games', () => {
     expect((game.getViewFor('b') as { yourActions: string[] }).yourActions).toContain('guess');
   });
 
+  it('다빈치 코드 view는 최근 추리 기록(정답·오답)을 모두에게 보여준다', () => {
+    const game = new DavinciEngine();
+    game.start(['a', 'b'], 'a', mulberry32(1));
+    type Entry = { guesser: string; target: string; index: number; value: number; correct: boolean };
+    const tiles = (game.getViewFor('b') as { boards: { nickname: string; tiles: { value: number | null }[] }[] }).boards.find((item) => item.nickname === 'b')!.tiles;
+    game.handleAction('a', { name: 'guess', arg: { player: 'b', index: 0, value: tiles[0]!.value! } });
+    const wrong = (tiles[1]!.value! + 1) % 12;
+    game.handleAction('a', { name: 'guess', arg: { player: 'b', index: 1, value: wrong } });
+    expect((game.getViewFor('b') as { history: Entry[] }).history).toEqual([
+      { guesser: 'a', target: 'b', index: 0, value: tiles[0]!.value!, correct: true },
+      { guesser: 'a', target: 'b', index: 1, value: wrong, correct: false },
+    ]);
+  });
+
+  it('다빈치 코드 추리 기록은 최근 6개만 보낸다', () => {
+    const game = new DavinciEngine();
+    game.start(['a', 'b'], 'a', mulberry32(1));
+    const lastTile = (p: string) => (game.getViewFor(p) as { boards: { nickname: string; tiles: { value: number | null }[] }[] }).boards.find((item) => item.nickname === p)!.tiles[3]!.value!;
+    // 서로 번갈아 상대의 3번(마지막) 타일을 틀린다. 오답은 추리한 사람 자신의 타일을 0번부터 공개하므로
+    // 대상의 3번은 끝까지 숨겨져 있다. 7번째 오답으로 a의 타일이 모두 공개되어 게임이 끝나도 기록은 남는다.
+    for (let i = 0; i < 7; i++) {
+      const [guesser, target] = i % 2 === 0 ? ['a', 'b'] : ['b', 'a'];
+      game.handleAction(guesser, { name: 'guess', arg: { player: target, index: 3, value: (lastTile(target) + 1) % 12 } });
+    }
+    expect((game.getViewFor('a') as { history: unknown[] }).history).toHaveLength(6);
+  });
+
   it('다빈치 코드 view는 모두에게 현재 차례 플레이어를 알려준다', () => {
     const game = new DavinciEngine();
     game.start(['a', 'b'], 'a', mulberry32(1));

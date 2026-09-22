@@ -5,6 +5,11 @@ import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
 
 interface Tile { value: number; revealed: boolean; }
+/** 추리 한 번의 기록. 틀린 숫자는 추리에서 가장 중요한 단서라 모두에게 공개한다. */
+interface GuessRecord { guesser: string; target: string; index: number; value: number; correct: boolean; }
+
+/** view로 보내는 최근 추리 기록 수 — 화면 몇 줄에 들어갈 만큼만. */
+const HISTORY_LIMIT = 6;
 
 /** 상대의 숫자 타일을 추리해 모두 공개하면 이기는 간결한 다빈치 코드. */
 export class DavinciEngine implements GameEngine {
@@ -15,12 +20,13 @@ export class DavinciEngine implements GameEngine {
   private turn = 0;
   private finished = false;
   private winner = '';
+  private history: GuessRecord[] = [];
 
   start(players: string[], _host: string, rng: Rng): void {
     this.players = [...players];
     const deck = shuffle(Array.from({ length: 24 }, (_, i) => i % 12), rng);
     this.tiles = new Map(players.map((p, i) => [p, deck.slice(i * 4, i * 4 + 4).sort((a, b) => a - b).map((value) => ({ value, revealed: false }))]));
-    this.turn = 0; this.finished = false; this.winner = '';
+    this.turn = 0; this.finished = false; this.winner = ''; this.history = [];
   }
   setHost(_host: string): void {}
   handleAction(player: string, action: EngineAction): EngineEvent[] {
@@ -28,6 +34,7 @@ export class DavinciEngine implements GameEngine {
     const targetTiles = this.tiles.get(action.arg.player);
     if (!targetTiles || action.arg.player === player || !targetTiles[action.arg.index] || targetTiles[action.arg.index]!.revealed) return [];
     const tile = targetTiles[action.arg.index]!;
+    this.history.push({ guesser: player, target: action.arg.player, index: action.arg.index, value: action.arg.value, correct: tile.value === action.arg.value });
     if (tile.value === action.arg.value) {
       tile.revealed = true;
       if (targetTiles.every((item) => item.revealed)) {
@@ -57,6 +64,7 @@ export class DavinciEngine implements GameEngine {
       yourActions: !this.finished && this.players[this.turn] === player ? ['guess'] : [],
       isTurn: this.players[this.turn] === player,
       turnPlayer: this.finished ? null : (this.players[this.turn] ?? null),
+      history: this.history.slice(-HISTORY_LIMIT).map((record) => ({ ...record })),
       boards: this.players.map((p) => ({ nickname: p, eliminated: this.isEliminated(p), tiles: (this.tiles.get(p) ?? []).map((tile) => ({ value: p === player || tile.revealed ? tile.value : null, revealed: tile.revealed })) })),
     };
   }

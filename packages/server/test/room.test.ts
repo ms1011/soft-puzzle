@@ -684,3 +684,77 @@ describe('Room — 게임 중 chat 라우팅', () => {
     for (const p of players) expect(chats(sent[p]).at(-1)).toEqual({ type: 'chat', from: citizens[0]!, text: 'gg', channel: 'all' });
   });
 });
+
+type FocusMsg = Extract<ServerMsg, { type: 'focus' }>;
+function focuses(msgs: ServerMsg[] | undefined): FocusMsg[] {
+  return (msgs ?? []).filter((m): m is FocusMsg => m.type === 'focus');
+}
+
+describe('Room — focus', () => {
+  function onecardRoom() {
+    const ctx = setup({ game: 'onecard' });
+    for (const p of ['철수', '영희', '민수']) ctx.room.join(p);
+    ctx.room.handleMessage('철수', { type: 'action', name: 'start' });
+    return ctx; // 첫 차례는 철수
+  }
+
+  it('차례인 사람의 focus는 자기 자신을 뺀 방 전원에게, 정리된 target으로 간다', () => {
+    const { room, sent } = onecardRoom();
+    room.handleMessage('철수', { type: 'focus', target: { index: 2, junk: true } });
+    expect(focuses(sent['영희'])).toEqual([{ type: 'focus', from: '철수', target: { index: 2 } }]);
+    expect(focuses(sent['민수'])).toHaveLength(1);
+    expect(focuses(sent['철수'])).toHaveLength(0);
+  });
+
+  it('차례가 아닌 사람의 focus와 형식이 틀린 focus는 전달되지 않는다', () => {
+    const { room, sent } = onecardRoom();
+    room.handleMessage('영희', { type: 'focus', target: { index: 0 } });
+    room.handleMessage('철수', { type: 'focus', target: { index: 99 } });
+    expect(focuses(sent['민수'])).toHaveLength(0);
+  });
+
+  it('focus는 state를 새로 보내지 않는다', () => {
+    const { room, sent } = onecardRoom();
+    const before = (sent['영희'] ?? []).filter((m) => m.type === 'state').length;
+    room.handleMessage('철수', { type: 'focus', target: { index: 0 } });
+    expect((sent['영희'] ?? []).filter((m) => m.type === 'state').length).toBe(before);
+  });
+
+  it('로비의 focus는 무시된다', () => {
+    const { room, sent } = setup({ game: 'onecard' });
+    room.join('철수');
+    room.join('영희');
+    room.handleMessage('철수', { type: 'focus', target: { index: 0 } });
+    expect(focuses(sent['영희'])).toHaveLength(0);
+  });
+
+  it('1초에 20개를 넘는 focus는 버리고, 1초가 지나면 다시 받는다', () => {
+    const { room, sent, tick } = onecardRoom();
+    for (let i = 0; i < 25; i++) room.handleMessage('철수', { type: 'focus', target: { index: i % 7 } });
+    expect(focuses(sent['영희'])).toHaveLength(20);
+    tick(1000);
+    room.handleMessage('철수', { type: 'focus', target: { index: 0 } });
+    expect(focuses(sent['영희'])).toHaveLength(21);
+  });
+
+  it('focusRoute가 없는 게임(라이어)은 아무것도 전달하지 않는다', () => {
+    const { room, sent } = setup({ game: 'liar' });
+    for (const p of ['철수', '영희', '민수']) room.join(p);
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    room.handleMessage('철수', { type: 'focus', target: { target: '영희' } });
+    expect(focuses(sent['영희'])).toHaveLength(0);
+  });
+
+  it('마피아 밤 조준은 동료 마피아만 받고, 시민은 받지 못한다', () => {
+    const players = ['p1', 'p2', 'p3', 'p4', 'p5'];
+    const { room, sent } = setup({ game: 'mafia', host: 'p1', mafiaSettings: { mafiaCount: 2, specialRoles: [] } });
+    for (const p of players) room.join(p);
+    room.handleMessage('p1', { type: 'action', name: 'start' });
+    const roleOf = (p: string) => (lastState(sent[p]).view as { yourRole: string }).yourRole;
+    const mafia = players.filter((p) => roleOf(p) === 'mafia');
+    const citizens = players.filter((p) => roleOf(p) !== 'mafia');
+    room.handleMessage(mafia[0]!, { type: 'focus', target: { target: citizens[0]! } });
+    expect(focuses(sent[mafia[1]!])).toEqual([{ type: 'focus', from: mafia[0], target: { target: citizens[0] } }]);
+    for (const c of citizens) expect(focuses(sent[c])).toHaveLength(0);
+  });
+});

@@ -40,6 +40,9 @@ const ENGINE_FACTORIES: Record<Exclude<GameId, 'mafia'>, () => GameEngine> = {
 
 const MAX_NICKNAME_LENGTH = 32;
 
+/** 한 사람이 1초에 보낼 수 있는 focus 수. 넘치면 버린다 — 키를 꾹 누른 클라이언트나 악의적 폭주를 막는다. */
+const FOCUS_LIMIT_PER_SECOND = 20;
+
 /**
  * 하나의 게임 룸: 로비(입장/퇴장) → 플레이(엔진 위임 + 턴 타이머) → 결과(재시작/로비 복귀)의
  * 수명주기를 관리한다. 어떤 게임인지는 ENGINE_FACTORIES를 통해서만 알고, 그 밖의 모든 로직은
@@ -63,6 +66,8 @@ export class Room {
   private engine: GameEngine | undefined;
   private deadline: number | null = null;
   private sendCb: ((nickname: string, msg: ServerMsg) => void) | null = null;
+  /** 사람별 최근 focus 수신 시각 — 전송 빈도 제한용. */
+  private focusTimes = new Map<string, number[]>();
 
   constructor(opts: RoomOpts) {
     this.roomName = opts.name;
@@ -115,6 +120,7 @@ export class Room {
   leave(nickname: string): void {
     const nick = nickname.trim();
     if (!this.players.includes(nick)) return;
+    this.focusTimes.delete(nick);
     const wasHost = nick === this.host;
 
     if (this.phase === 'playing' && this.engine) {
@@ -180,6 +186,8 @@ export class Room {
       const trimmed = text.trim().slice(0, MAX_CHAT_LENGTH);
       if (!trimmed) return;
       this.handleChat(nick, trimmed);
+    } else if (type === 'focus') {
+      this.handleFocus(nick, (msg as { target?: unknown }).target ?? null);
     }
     // 'join'이나 알 수 없는 type은 여기서 다루지 않는다(join은 별도 API) — 조용히 무시.
   }
@@ -336,6 +344,32 @@ export class Room {
     const channel = route?.channel ?? 'all';
     const to = route ? this.players.filter((p) => route.to.includes(p)) : this.players;
     for (const p of to) this.send(p, { type: 'chat', from: nickname, text, channel });
+  }
+
+  /**
+   * 차례인 사람의 확정 전 커서를 엔진이 정한 수신자에게 전달한다. 엔진 상태·deadline은 건드리지 않고
+   * state도 새로 보내지 않는다. 받은 target이 아니라 엔진이 정리한 target만 보낸다.
+   */
+  private handleFocus(nickname: string, target: unknown): void {
+    if (this.phase !== 'playing' || !this.engine?.focusRoute) return;
+    if (!this.engine.pendingPlayers().includes(nickname)) return;
+    if (!this.takeFocusSlot(nickname)) return;
+    const route = this.engine.focusRoute(nickname, target);
+    if (route === null) return;
+    const recipients = route.to === 'all' ? this.players : this.players.filter((p) => route.to.includes(p));
+    for (const p of recipients) {
+      if (p !== nickname) this.send(p, { type: 'focus', from: nickname, target: route.target });
+    }
+  }
+
+  /** 최근 1초 안의 focus 수가 한도 미만이면 한 칸을 쓰고 true. */
+  private takeFocusSlot(nickname: string): boolean {
+    const now = this.now();
+    const recent = (this.focusTimes.get(nickname) ?? []).filter((t) => now - t < 1000);
+    const allowed = recent.length < FOCUS_LIMIT_PER_SECOND;
+    if (allowed) recent.push(now);
+    this.focusTimes.set(nickname, recent);
+    return allowed;
   }
 
   // ---- 브로드캐스트 ----

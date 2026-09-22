@@ -11,6 +11,8 @@ import {
   DavinciEngine,
   LiarEngine,
   IndianPokerEngine,
+  YutEngine,
+  LasVegasEngine,
 } from '@soft-puzzle/core';
 import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent, MafiaSettings } from '@soft-puzzle/core';
 
@@ -36,6 +38,8 @@ const ENGINE_FACTORIES: Record<Exclude<GameId, 'mafia'>, () => GameEngine> = {
   davinci: () => new DavinciEngine(),
   liar: () => new LiarEngine(),
   indianPoker: () => new IndianPokerEngine(),
+  yut: () => new YutEngine(),
+  lasVegas: () => new LasVegasEngine(),
 };
 
 const MAX_NICKNAME_LENGTH = 32;

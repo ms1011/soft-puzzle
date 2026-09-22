@@ -29,3 +29,5 @@ export { isValidMafiaCount, MafiaEngine } from './games/mafia.js';
 export { DavinciEngine } from './games/davinci.js';
 export { LiarEngine } from './games/liar.js';
 export { IndianPokerEngine } from './games/indianPoker.js';
+export { YutEngine } from './games/yut.js';
+export { LasVegasEngine } from './games/lasVegas.js';

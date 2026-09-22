@@ -9,9 +9,11 @@ export const GAME_LABELS: Record<GameId, string> = {
   davinci: '다빈치 코드',
   liar: '라이어 게임',
   indianPoker: '인디언 포커',
+  yut: '윷놀이',
+  lasVegas: '라스베가스',
 };
 
-export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia', 'davinci', 'liar', 'indianPoker'];
+export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia', 'davinci', 'liar', 'indianPoker', 'yut', 'lasVegas'];
 
 export const GAME_INFO: Record<GameId, { minPlayers: number; summary: string; duration: string }> = {
   blackjack: { minPlayers: 2, summary: '21에 가깝게 카드를 모아 칩을 겨룹니다.', duration: '10~20분' },
@@ -21,6 +23,8 @@ export const GAME_INFO: Record<GameId, { minPlayers: number; summary: string; du
   davinci: { minPlayers: 2, summary: '숨겨진 숫자 타일을 추리해 최후까지 생존합니다.', duration: '10~15분' },
   liar: { minPlayers: 3, summary: '제시어를 모르는 라이어를 대화로 찾아냅니다.', duration: '5~10분' },
   indianPoker: { minPlayers: 2, summary: '상대 카드만 보고 콜 또는 폴드해 칩을 겨룹니다.', duration: '10~20분' },
+  yut: { minPlayers: 2, summary: '윷을 던져 말 네 개를 먼저 모두 날립니다.', duration: '15~25분' },
+  lasVegas: { minPlayers: 2, summary: '주사위를 카지노에 걸어 가장 많은 돈을 법니다.', duration: '15~20분' },
 };
 
 /**
@@ -55,6 +59,11 @@ export const ACTION_LABELS: Record<string, string> = {
   guess: '추리',
   call: '콜',
   fold: '폴드',
+  // 윷놀이
+  throw: '윷 던지기',
+  move: '말 이동',
+  // 라스베가스
+  place: '주사위 걸기',
 };
 
 /**
@@ -91,4 +100,9 @@ export const ACTION_KEYS: Record<string, string> = {
   guess: 'Enter',
   call: 'Enter',
   fold: 'f',
+  // 윷놀이
+  throw: 'Space',
+  move: 'Enter',
+  // 라스베가스
+  place: 'Enter',
 };

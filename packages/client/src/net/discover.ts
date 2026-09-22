@@ -3,7 +3,7 @@ import os from 'node:os';
 import { DISCOVERY_PROBE, DEFAULT_UDP_PORT } from '@soft-puzzle/core';
 import type { RoomInfo, GameId } from '@soft-puzzle/core';
 
-const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia', 'davinci', 'liar', 'indianPoker'];
+const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia', 'davinci', 'liar', 'indianPoker', 'yut', 'lasVegas'];
 
 export interface DiscoverOptions {
   /** 총 수집 시간(ms). 기본 3500 — 프로브 3회(1초 간격) 송신 뒤에도 응답이 돌아올 여유를 둔다. */

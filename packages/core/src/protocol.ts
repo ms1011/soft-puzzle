@@ -1,4 +1,4 @@
-export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia' | 'davinci' | 'liar' | 'indianPoker';
+export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia' | 'davinci' | 'liar' | 'indianPoker' | 'yut' | 'lasVegas';
 
 /** 채팅이 전달된 범위 — 'all'은 방(또는 생존자) 전원, 나머지는 게임이 정한 비밀 채널이다. */
 export type ChatChannel = 'all' | 'mafia' | 'dead';

@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { OneCardView, renderLiftedHand } from '../src/ui/game/OneCardView.js';
 import type { GameViewProps } from '../src/ui/game/types.js';
-import { findNonAsciiNonHangul } from './testUtils.js';
+import { displayWidth } from '../src/art/width.js';
+import { findNonAsciiNonHangul, renderAtWidth } from './testUtils.js';
 
 const ESC = '';
 const RIGHT_ARROW = `${ESC}[C`;
@@ -132,16 +133,40 @@ describe('OneCardView', () => {
     }).not.toThrow();
   });
 
-  it('상대는 작은 터미널에서도 한 줄에 닉네임과 장수만 압축해 보여준다', () => {
+  it('상대 손패를 닉네임·장수와 함께 뒷면 겹침 아트로 그린다', () => {
     const { lastFrame, unmount } = render(<OneCardView {...baseProps()} />);
     const frame = lastFrame() ?? '';
-    const lines = frame.split('\n');
-    expect(frame).toContain('영희');
-    expect(frame).toContain('5장');
+    expect(frame).toContain('영희 5장');
+    // 뒷면 5장 겹침: 앞 4장은 왼쪽 2칸(│▒), 마지막 장은 온전히(│▒▒▒▒▒│).
+    expect(frame).toContain('│▒│▒│▒│▒│▒▒▒▒▒│');
+    unmount();
+  });
 
-    const opponentLines = lines.filter((line) => line.includes('영희'));
-    expect(opponentLines).toHaveLength(1);
-    expect(opponentLines[0]).toContain('영희 5장');
+  it('상대가 8장을 넘게 쥐면 8장만 그리고 +N으로 나머지를 알린다', () => {
+    const view = playingView({ others: [{ nickname: '영희', handCount: 12, isTurn: false }] });
+    const { lastFrame, unmount } = render(<OneCardView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('영희 12장');
+    expect(frame).toContain('+4');
+    unmount();
+  });
+
+  it('상대 5명, 80칼럼에서도 줄이 넘치지 않고 차례인 상대를 표시한다', () => {
+    const others = ['영희', '민수', '지민', '서연', '도윤'].map((nickname, i) => ({ nickname, handCount: 15, isTurn: i === 2 }));
+    const { lastFrame, unmount } = renderAtWidth(<OneCardView {...baseProps({ view: playingView({ others }) })} />, 80);
+    const frame = lastFrame() ?? '';
+    for (const line of frame.split('\n')) expect(displayWidth(line)).toBeLessThanOrEqual(80);
+    expect(frame).toContain('◀ 지민 15장');
+    unmount();
+  });
+
+  it('뽑을 더미 장수와 공격·선언 무늬 배지를 보여준다', () => {
+    const view = playingView({ drawPileCount: 23, attackStack: 5, top: '7S', declaredSuit: 'H' });
+    const { lastFrame, unmount } = render(<OneCardView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('23장');
+    expect(frame).toContain('공격 +5');
+    expect(frame).toMatch(/무늬 ♥/);
     unmount();
   });
 

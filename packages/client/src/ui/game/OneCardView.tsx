@@ -4,6 +4,7 @@ import { useScreenInput } from '../inputLock.js';
 import type { Card, Suit } from '@soft-puzzle/core';
 import { canPlay, rankOf } from '@soft-puzzle/core';
 import { isRedCard, renderCard, renderHandSegments } from '../../art/cards.js';
+import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { CardRows } from './CardRows.js';
 import { turnGlyph } from './glyphs.js';
 import type { GameViewProps } from './types.js';
@@ -41,6 +42,8 @@ interface OneCardGameView {
   declaredSuit: Suit | null;
   attackStack: number;
   direction: 1 | -1;
+  /** 지금 뽑을 수 있는 장수. 이 필드가 없던 옛 서버와 붙으면 undefined다. */
+  drawPileCount?: number;
 }
 
 /** renderLiftedHand가 한 칸(카드 한 장, 한 줄)마다 돌려주는 조각 — dimColor를 카드
@@ -93,9 +96,47 @@ export function renderLiftedHand(
   return rows;
 }
 
+/** 상대 한 명의 칸 폭 — 뒷면 8장(2×7+7=21)과 ' +N', 옆 칸과의 여백이 들어가고, 80칼럼에 3명씩(78칼럼) 나란히 놓인다. */
+const OPPONENT_WIDTH = 26;
+/** 상대 손패를 그리는 최대 장수. 넘치면 '+N'으로 나머지를 알린다 — 20장을 쥐어도 칸이 넘치지 않는다. */
+const OPPONENT_VISIBLE_CARDS = 8;
+/** 상대 닉네임 표시 폭 상한(차례 표시 2칸, ' NN장' 5칸, 옆 칸과의 여백을 뺀 나머지). */
+const OPPONENT_NICK_CAP = OPPONENT_WIDTH - 10;
+
+function padCenter(str: string, width: number): string {
+  const pad = Math.max(0, width - displayWidth(str));
+  const left = Math.floor(pad / 2);
+  return ' '.repeat(left) + str + ' '.repeat(pad - left);
+}
+
+/**
+ * 상대 한 명의 손패를 뒷면 겹침 아트로 그린다. 서버는 상대 손패 내용을 절대 보내지 않으므로
+ * (handCount만) 전부 'back'이다. renderLiftedHand로 그려 맨 윗줄을 비워 두는데, 상대가 고민
+ * 중인 카드를 한 장 들어 올려 보여줄 자리다 — 들어 올릴 때 레이아웃이 밀리지 않는다.
+ */
+function OpponentHand({ player, theme }: { player: OtherPlayer; theme: GameViewProps['theme'] }): React.JSX.Element {
+  const visible = Math.min(player.handCount, OPPONENT_VISIBLE_CARDS);
+  const hidden = player.handCount - visible;
+  const backs = Array<Card>(visible).fill('back');
+  const rows = visible > 0 ? renderLiftedHand(backs, -1, [], theme) : [];
+  return (
+    <Box flexDirection="column" width={OPPONENT_WIDTH} marginBottom={1}>
+      <Text bold={player.isTurn} wrap="truncate-end">
+        {player.isTurn ? `${turnGlyph(theme)} ` : '  '}
+        {truncateDisplay(player.nickname, OPPONENT_NICK_CAP)} {player.handCount}장
+      </Text>
+      {visible === 0 ? (
+        <Text dimColor>  (손패 없음)</Text>
+      ) : (
+        <CardRows rows={rows.map((row, r) => (r === 3 && hidden > 0 ? [...row, { text: ` +${hidden}`, playable: true, red: false }] : row))} />
+      )}
+    </Box>
+  );
+}
+
 /**
  * 원카드 게임 화면. 서버는 상대의 손패 내용을 절대 보내지 않는다(handCount만) — 그러니
- * 여기서도 상대 카드는 뒷면 겹침 아트(renderHand(Array(n).fill('back')))로만 그린다.
+ * 여기서도 상대 카드는 뒷면 겹침 아트(OpponentHand)로만 그린다.
  * canPlay는 어디까지나 "낼 수 없어 보이는 카드를 미리 알려주는" 클라이언트 힌트일 뿐이다:
  * 서버가 최종 판정을 내리고, 이 화면은 그 힌트로 Enter를 미리 무시하거나(요구사항) 카드를
  * dimColor로 흐리게 보여줄(브리프 결정: 명시적으로 켜기로 함) 뿐 규칙을 스스로 강제하지
@@ -183,20 +224,37 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column" marginBottom={1}>
-        <Text>
-          방향 {dirGlyph}
-          {v.declaredSuit !== null && `  무늬: ${suitGlyph(v.declaredSuit, theme.unicode)}`}
-          {v.attackStack > 0 && `  ${attackGlyph}+${v.attackStack}`}
-        </Text>
-        <CardRows rows={renderHandSegments([v.top], theme)} />
+      <Box flexDirection="row" flexWrap="wrap">
+        {v.others.map((o) => (
+          <OpponentHand key={o.nickname} player={o} theme={theme} />
+        ))}
       </Box>
 
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold>상대 손패</Text>
-        <Text>
-          {v.others.map((o) => `${o.isTurn ? turnGlyph(theme) : theme.unicode ? '·' : '-'} ${o.nickname} ${o.handCount}장`).join('  ')}
-        </Text>
+      <Box flexDirection="row" marginBottom={1}>
+        <Box flexDirection="column" marginRight={2}>
+          <CardRows rows={renderHandSegments(['back'], theme)} />
+          <Text dimColor>{padCenter(`${v.drawPileCount ?? 0}장`, CARD_WIDTH)}</Text>
+        </Box>
+        <Box flexDirection="column" marginRight={3}>
+          <CardRows rows={renderHandSegments([v.top], theme)} />
+          <Text dimColor>{padCenter('바닥', CARD_WIDTH)}</Text>
+        </Box>
+        <Box flexDirection="column" justifyContent="center">
+          <Text>방향 {dirGlyph}</Text>
+          {v.declaredSuit !== null && (
+            <Text>
+              무늬{' '}
+              <Text bold color={v.declaredSuit === 'H' || v.declaredSuit === 'D' ? 'red' : undefined}>
+                {suitGlyph(v.declaredSuit, theme.unicode)}
+              </Text>
+            </Text>
+          )}
+          {v.attackStack > 0 && (
+            <Text bold color="red">
+              {attackGlyph} 공격 +{v.attackStack}
+            </Text>
+          )}
+        </Box>
       </Box>
 
       <Box flexDirection="column">

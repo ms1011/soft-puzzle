@@ -34,6 +34,15 @@ function h(...pairs: [string, Card[]][]): Map<string, Card[]> {
 }
 
 describe('OneCardEngine', () => {
+  it('view.drawPileCount는 지금 뽑을 수 있는 장수다(덱 54 - 손패 14 - 바닥 1, 뽑으면 줄어든다)', () => {
+    const e = new OneCardEngine();
+    e.start(['철수', '영희'], '철수', mulberry32(1));
+    const before = view(e, '영희').drawPileCount;
+    expect(before).toBe(54 - 14 - 1);
+    e.handleAction('철수', { name: 'draw' });
+    expect(view(e, '영희').drawPileCount).toBeLessThan(before);
+  });
+
   it('① 시작하면 각자 7장씩 받고 top이 1장 있다', () => {
     const e = new OneCardEngine();
     e.start(['철수', '영희'], '철수', mulberry32(1));

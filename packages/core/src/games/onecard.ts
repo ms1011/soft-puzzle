@@ -321,6 +321,8 @@ export class OneCardEngine implements GameEngine {
       declaredSuit: this.declaredSuit,
       attackStack: this.attackStack,
       direction: this.direction,
+      // drawPile이 바닥나면 discard를 재셔플해 되돌리므로, 실제로 뽑을 수 있는 장수는 둘의 합이다.
+      drawPileCount: this.drawPile.length + this.discard.length,
     };
   }
 

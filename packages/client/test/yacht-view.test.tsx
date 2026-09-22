@@ -93,6 +93,35 @@ describe('YachtView', () => {
     unmount();
   });
 
+  it('차례인 다른 사람이 고민 중인 칸을 점수표와 문구로 보여주고, 표 줄 수는 그대로다', () => {
+    const view = turnView({
+      yourActions: [],
+      turnPlayer: '영희',
+      players: turnView().players.map((p) => ({ ...p, isTurn: p.nickname === '영희' })),
+    });
+    const plain = render(<YachtView {...baseProps({ view })} />);
+    const focused = render(<YachtView {...baseProps({ view, focus: { 영희: { category: 'fullHouse' } } })} />);
+    const frame = focused.lastFrame() ?? '';
+    expect(frame).toContain('풀하우스 칸을 고민 중');
+    expect(frame.split('\n').find((l) => l.includes('풀하우스') && !l.includes('고민'))).toContain('▶');
+    expect(frame.split('\n').length).toBe((plain.lastFrame() ?? '').split('\n').length);
+    plain.unmount();
+    focused.unmount();
+  });
+
+  it('점수 칸 선택 모드에서 커서 칸을 sendFocus로 보내고, 모드를 나가면 null을 보낸다', async () => {
+    const sendFocus = vi.fn();
+    const { stdin, unmount } = render(<YachtView {...baseProps({ sendFocus })} />);
+    await tick();
+    stdin.write('c');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(sendFocus).toHaveBeenLastCalledWith({ category: 'twos' }); // 철수는 ones를 이미 기록했다
+    stdin.write('\u001B');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(sendFocus).toHaveBeenLastCalledWith(null);
+    unmount();
+  });
+
   it("1 입력이 send('toggleHold', 0)을 호출한다", async () => {
     const send = vi.fn();
     const { stdin, unmount } = render(<YachtView {...baseProps({ send })} />);

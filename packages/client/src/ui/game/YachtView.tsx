@@ -5,6 +5,8 @@ import type { YachtCategory } from '@soft-puzzle/core';
 import { scoreCategory } from '@soft-puzzle/core';
 import { renderDice } from '../../art/dice.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
+import { cursorGlyph } from './glyphs.js';
+import { useFocusBroadcast } from '../focus.js';
 import type { GameViewProps } from './types.js';
 
 /** 13칸의 고정 표시 순서와 브리프가 지정한 한글 라벨. core의 CATEGORY_LABELS(이벤트 로그용
@@ -92,7 +94,7 @@ function rollPips(rollsLeft: number, theme: GameViewProps['theme']): string {
  * 내 턴인지는 오직 yourActions가 비어 있는지로 판단한다(엔진은 내 턴일 때만
  * toggleHold/score를 채워 넣는다).
  */
-export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
+export function YachtView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
   const v = view as unknown as YachtGameView;
   const actions = v.yourActions;
   const isYourTurn = actions.length > 0;
@@ -145,6 +147,16 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
 
   const safeCursor = Math.min(cursor, Math.max(0, unscored.length - 1));
   const cursorCat = selecting ? unscored[safeCursor] : undefined;
+  useFocusBroadcast(sendFocus, cursorCat !== undefined ? { category: cursorCat } : null, view);
+
+  // 차례인 다른 사람이 점수 칸 선택 모드에서 보고 있는 칸.
+  const focusCategory = ((): YachtCategory | undefined => {
+    if (v.turnPlayer === null || v.turnPlayer === you) return undefined;
+    const category = (focus?.[v.turnPlayer] as { category?: unknown } | undefined)?.category;
+    return typeof category === 'string' && (CATEGORY_ORDER as string[]).includes(category)
+      ? (category as YachtCategory)
+      : undefined;
+  })();
 
   // 턴/커서 마커는 블랙잭·원카드와 같은 ◀(ascii: <)로 통일한다(리뷰 지적: 예전엔 야추만
   // ▶를 썼다). 이 화면에서는 "누구 턴인지"(헤더)와 "카테고리 선택 커서"(행) 두 곳에 쓴다.
@@ -216,6 +228,12 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
               {v.turnPlayer}님의 차례
             </Text>
           )}
+          {/* 왼쪽 칸은 8줄, 점수표는 17줄이라 한 줄 늘어도 전체 높이는 그대로다. */}
+          {focusCategory !== undefined && v.turnPlayer !== null && (
+            <Text color="yellow" wrap="truncate-end">
+              {v.turnPlayer}님이 {CATEGORY_LABELS[focusCategory]} 칸을 고민 중
+            </Text>
+          )}
         </Box>
 
         {/* 점수표는 절대 압축되면 안 된다 — flexShrink 기본값(1)대로 두면 터미널 폭이
@@ -226,9 +244,10 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
           <Text>{rowLine(' ', '', headerCells)}</Text>
           {CATEGORY_ORDER.map((cat) => {
             const isCursorRow = cursorCat === cat;
+            const isFocusRow = focusCategory === cat;
             return (
-              <Text key={cat} bold={isCursorRow}>
-                {rowLine(isCursorRow ? turnGlyph : ' ', CATEGORY_LABELS[cat], '')}
+              <Text key={cat} bold={isCursorRow || isFocusRow}>
+                {rowLine(isCursorRow ? turnGlyph : isFocusRow ? cursorGlyph(theme) : ' ', CATEGORY_LABELS[cat], '')}
                 {v.players.map((p, i) => {
                   const cell = scoreCell(p, cat);
                   return (

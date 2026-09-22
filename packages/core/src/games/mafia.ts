@@ -30,6 +30,8 @@ export class MafiaEngine implements GameEngine {
   private roles = new Map<string, Role>();
   private alive = new Set<string>();
   private phase: Phase = 'night';
+  /** 몇 일차인지. 1일차 밤에서 시작하고, 낮이 끝나 밤이 될 때 하루가 늘어난다. */
+  private day = 1;
   private actions = new Map<string, string>();
   private investigationResults = new Map<string, string>();
   private finished = false;
@@ -58,6 +60,7 @@ export class MafiaEngine implements GameEngine {
     });
 
     this.phase = 'night';
+    this.day = 1;
     this.actions = new Map();
     this.investigationResults = new Map();
     this.finished = false;
@@ -119,6 +122,7 @@ export class MafiaEngine implements GameEngine {
     else this.eliminate(target, '투표로', events);
     if (this.checkFinished(events)) return events;
     this.phase = 'night';
+    this.day++;
     this.actions = new Map();
     events.push({ text: '밤이 되었습니다. 마피아와 특수직업자는 행동할 대상을 고르세요.' });
     return events;
@@ -171,11 +175,24 @@ export class MafiaEngine implements GameEngine {
       yourActions: action === null || this.actions.has(player) ? [] : [action],
       yourRole: role,
       phaseLabel: this.phase === 'night' ? '밤' : '낮',
-      alive: this.players.map((nickname) => ({ nickname, alive: this.alive.has(nickname), role: this.alive.has(nickname) ? undefined : this.roles.get(nickname) })),
+      alive: this.players.map((nickname) => ({ nickname, alive: this.alive.has(nickname), role: this.visibleRole(player, nickname) })),
+      day: this.day,
+      // 낮 투표를 마친 사람. 밤에는 비운다 — 밤에 행동을 마친 사람이 보이면 그가 마피아·특수직업이라는 게 드러난다.
+      voted: this.phase === 'day' && !this.finished ? this.players.filter((p) => this.actions.has(p)) : [],
       hasActed: this.actions.has(player),
       investigationResult: this.investigationResults.get(player),
       chat: this.chatStatus(player),
     };
+  }
+
+  /**
+   * viewer에게 보이는 target의 역할. 탈락자의 역할은 모두에게 공개되고, 마피아는 살아 있는 동료 마피아를
+   * 안다. 그 밖에는 아무것도 보이지 않는다(undefined).
+   */
+  private visibleRole(viewer: string, target: string): Role | undefined {
+    if (!this.alive.has(target)) return this.roles.get(target);
+    if (this.roles.get(viewer) === 'mafia' && this.roles.get(target) === 'mafia') return 'mafia';
+    return undefined;
   }
 
   /**

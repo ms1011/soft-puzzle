@@ -19,7 +19,13 @@ interface MafiaGameView {
   alive: MafiaPlayer[];
   hasActed: boolean;
   investigationResult?: string;
+  /** 몇 일차인지. 이 필드가 없던 옛 서버와 붙으면 undefined다. */
+  day?: number;
+  /** 낮 투표를 마친 사람. 밤에는 비어 있다(밤 행동자가 보이면 역할이 드러난다). */
+  voted?: string[];
 }
+
+const ROLE_LABELS = { mafia: '마피아', citizen: '시민', doctor: '의사', police: '경찰', detective: '탐정' } as const;
 
 /** 마피아는 역할과 생존 여부가 핵심이라, 카드 아트 대신 투표 대상 선택을 크게 보여준다. */
 export function MafiaView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
@@ -52,18 +58,33 @@ export function MafiaView({ view, you, send, theme, focus, sendFocus }: GameView
     }
   });
 
-  const roleLabel = { mafia: '마피아', citizen: '시민', doctor: '의사', police: '경찰', detective: '탐정' }[v.yourRole];
-  const phaseText = v.phase === 'night'
-    ? ({ mafiaVote: '밤: 처치할 대상을 고르세요.', protect: '밤: 보호할 대상을 고르세요.', investigateMafia: '밤: 조사할 대상을 고르세요.', investigateRole: '밤: 직업을 확인할 대상을 고르세요.' }[action ?? ''] ?? '밤: 다른 플레이어의 행동을 기다리는 중입니다.')
-    : '낮: 탈락시킬 사람에게 투표하세요.';
+  const roleLabel = ROLE_LABELS[v.yourRole];
+  const isNight = v.phase === 'night';
+  const phaseText = isNight
+    ? ({ mafiaVote: '처치할 대상을 고르세요.', protect: '보호할 대상을 고르세요.', investigateMafia: '조사할 대상을 고르세요.', investigateRole: '직업을 확인할 대상을 고르세요.' }[action ?? ''] ?? '다른 플레이어의 행동을 기다리는 중입니다.')
+    : '탈락시킬 사람에게 투표하세요.';
   const pointer = cursorGlyph(theme);
+  const voted = v.voted ?? [];
+  const aliveCount = v.alive.filter((p) => p.alive).length;
+  const banner = `${theme.unicode ? (isNight ? '☾ ' : '☀ ') : ''}${v.day !== undefined ? `${v.day}일차 ` : ''}${isNight ? '밤' : '낮'}`;
 
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color={v.yourRole === 'mafia' ? 'red' : 'cyan'}>
         내 역할: {roleLabel}
       </Text>
-      <Text bold>{phaseText}</Text>
+      <Text>
+        <Text bold color={isNight ? 'blue' : 'yellow'}>
+          {banner}
+        </Text>
+        {'  '}
+        {phaseText}
+      </Text>
+      {!isNight && (
+        <Text dimColor>
+          투표 {voted.length}/{aliveCount}명
+        </Text>
+      )}
       <Box flexDirection="column" marginTop={1}>
         <Text bold>참가자</Text>
         {v.alive.map((p) => {
@@ -73,7 +94,15 @@ export function MafiaView({ view, you, send, theme, focus, sendFocus }: GameView
           return (
             <Text key={p.nickname} inverse={selected} dimColor={!p.alive}>
               {selected ? `${pointer} ` : '  '}{p.nickname}{p.nickname === you ? ' (나)' : ''}
-              {p.alive ? '  생존' : `  탈락 (${p.role === undefined ? '' : { mafia: '마피아', citizen: '시민', doctor: '의사', police: '경찰', detective: '탐정' }[p.role]})`}
+              {p.alive ? '  생존' : `  탈락 (${p.role === undefined ? '' : ROLE_LABELS[p.role]})`}
+              {/* 살아 있는 사람의 역할은 서버가 마피아에게 동료 마피아만 알려준다. */}
+              {p.alive && p.role === 'mafia' && p.nickname !== you && <Text color="red"> [동료 마피아]</Text>}
+              {!isNight && voted.includes(p.nickname) && (
+                <Text color="green">
+                  {'  '}
+                  {theme.unicode ? '✓' : 'v'} 투표 완료
+                </Text>
+              )}
               {comrades.length > 0 && (
                 <Text color="red">
                   {'  '}

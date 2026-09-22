@@ -111,3 +111,52 @@ describe('MafiaEngine', () => {
     });
   });
 });
+
+describe('MafiaEngine view — 동료·일차·투표 진행', () => {
+  type AliveEntry = { nickname: string; alive: boolean; role?: Role };
+  type View = { day: number; phase: string; alive: AliveEntry[]; voted: string[] };
+  const view = (game: MafiaEngine, p: string) => game.getViewFor(p) as unknown as View;
+
+  function started() {
+    const game = new MafiaEngine({ mafiaCount: 2, specialRoles: [] });
+    const players = ['a', 'b', 'c', 'd', 'e'];
+    game.start(players, 'a', mulberry32(4));
+    const mafia = players.filter((p) => (game.getViewFor(p) as { yourRole: Role }).yourRole === 'mafia');
+    const citizens = players.filter((p) => !mafia.includes(p));
+    return { game, mafia, citizens };
+  }
+
+  it('마피아는 살아 있는 동료의 역할을 보고, 시민은 아무 역할도 보지 못한다', () => {
+    const { game, mafia, citizens } = started();
+    const seenByMafia = view(game, mafia[0]!).alive.find((p) => p.nickname === mafia[1])!;
+    expect(seenByMafia.role).toBe('mafia');
+    for (const entry of view(game, citizens[0]!).alive) expect(entry.role).toBeUndefined();
+    expect(view(game, mafia[0]!).alive.find((p) => p.nickname === citizens[0])!.role).toBeUndefined();
+  });
+
+  it('일차는 1일차 밤에서 시작해, 낮이 지나 밤이 되면 늘어난다', () => {
+    const { game, mafia, citizens } = started();
+    const [m1, m2] = mafia as [string, string];
+    const [c1, c2, c3] = citizens as [string, string, string];
+    expect(view(game, c1).day).toBe(1);
+    // 밤·낮 모두 표를 동률로 나눠 아무도 탈락하지 않게 한다 — 5인·마피아 2명이라 한 명만 빠져도 끝난다.
+    game.handleAction(m1, { name: 'mafiaVote', arg: c1 });
+    game.handleAction(m2, { name: 'mafiaVote', arg: c2 });
+    expect(view(game, c1)).toMatchObject({ phase: 'day', day: 1 });
+    game.handleAction(m1, { name: 'vote', arg: c1 });
+    game.handleAction(m2, { name: 'vote', arg: c2 });
+    game.handleAction(c1, { name: 'vote', arg: c2 });
+    game.handleAction(c2, { name: 'vote', arg: c1 });
+    game.handleAction(c3, { name: 'vote', arg: m1 });
+    expect(view(game, c1)).toMatchObject({ phase: 'night', day: 2 });
+  });
+
+  it('낮에는 투표를 마친 사람 목록을 보여주고, 밤에는 비워 둔다(밤 행동자는 곧 역할 노출)', () => {
+    const { game, mafia, citizens } = started();
+    game.handleAction(mafia[0]!, { name: 'mafiaVote', arg: citizens[0]! });
+    expect(view(game, citizens[1]!).voted).toEqual([]);
+    game.handleAction(mafia[1]!, { name: 'mafiaVote', arg: citizens[1]! }); // 동률 → 아무도 안 죽고 낮
+    game.handleAction(citizens[1]!, { name: 'vote', arg: mafia[0]! });
+    expect(view(game, mafia[0]!).voted).toEqual([citizens[1]]);
+  });
+});

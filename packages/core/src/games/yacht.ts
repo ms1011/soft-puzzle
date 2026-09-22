@@ -1,6 +1,7 @@
 import type { Rng } from '../rng.js';
 import type { GameId, GameView } from '../protocol.js';
-import type { GameEngine, EngineAction, EngineEvent } from '../engine.js';
+import type { GameEngine, EngineAction, EngineEvent, FocusRoute } from '../engine.js';
+import { focusField } from '../engine.js';
 
 export type YachtCategory =
   | 'ones'
@@ -284,6 +285,16 @@ export class YachtEngine implements GameEngine {
     if (this.rollsLeft > 0) actions.push('reroll');
     actions.push('toggleHold', 'score');
     return actions;
+  }
+
+  /** 차례인 사람이 점수 칸 선택 모드에서 보고 있는 빈 칸을 전원에게 알린다. */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.finished || this.order[this.turnIdx] !== sender) return null;
+    if (target === null) return { to: 'all', target: null };
+    const category = focusField(target, 'category');
+    if (typeof category !== 'string' || !ALL_CATEGORIES.includes(category as YachtCategory)) return null;
+    if (category in (this.sheets.get(sender) ?? {})) return null;
+    return { to: 'all', target: { category } };
   }
 
   pendingPlayers(): string[] {

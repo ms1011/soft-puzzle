@@ -1,4 +1,5 @@
-import type { EngineAction, EngineEvent, GameEngine } from '../engine.js';
+import type { EngineAction, EngineEvent, FocusRoute, GameEngine } from '../engine.js';
+import { focusField } from '../engine.js';
 import type { GameId, GameView } from '../protocol.js';
 import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
@@ -58,6 +59,17 @@ export class DavinciEngine implements GameEngine {
       turnPlayer: this.finished ? null : (this.players[this.turn] ?? null),
       boards: this.players.map((p) => ({ nickname: p, eliminated: this.isEliminated(p), tiles: (this.tiles.get(p) ?? []).map((tile) => ({ value: p === player || tile.revealed ? tile.value : null, revealed: tile.revealed })) })),
     };
+  }
+  /** 차례인 사람이 겨누는 상대 타일을 전원에게 알린다 — 추리하려는 숫자는 절대 담지 않는다. */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.finished || this.players[this.turn] !== sender) return null;
+    if (target === null) return { to: 'all', target: null };
+    const player = focusField(target, 'player');
+    const index = focusField(target, 'index');
+    if (typeof player !== 'string' || player === sender || typeof index !== 'number' || !Number.isInteger(index)) return null;
+    const tile = this.tiles.get(player)?.[index];
+    if (tile === undefined || tile.revealed || this.isEliminated(player)) return null;
+    return { to: 'all', target: { player, index } };
   }
   pendingPlayers(): string[] { return this.finished ? [] : [this.players[this.turn]!]; }
   defaultAction(player: string): EngineAction | null {

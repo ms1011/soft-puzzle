@@ -1,4 +1,5 @@
-import type { GameEngine, EngineAction, EngineEvent, ChatRoute } from '../engine.js';
+import type { GameEngine, EngineAction, EngineEvent, ChatRoute, FocusRoute } from '../engine.js';
+import { focusField } from '../engine.js';
 import type { ChatChannel, GameId, GameView } from '../protocol.js';
 import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
@@ -196,6 +197,20 @@ export class MafiaEngine implements GameEngine {
   private chatStatus(player: string): { canSend: boolean; channel: ChatChannel | null } {
     const route = this.chatRoute(player);
     return route.ok ? { canSend: true, channel: route.channel } : { canSend: false, channel: null };
+  }
+
+  /**
+   * 밤에 아직 행동하지 않은 살아 있는 마피아의 조준만, 살아 있는 마피아끼리 공유한다. 낮 투표 커서는
+   * 숨긴다(투표는 비밀이다) — 시민·특수직업·탈락자의 커서도 전달하지 않는다.
+   */
+  focusRoute(sender: string, target: unknown): FocusRoute {
+    if (this.finished || this.phase !== 'night' || !this.alive.has(sender)) return null;
+    if (this.roles.get(sender) !== 'mafia' || this.actions.has(sender)) return null;
+    const to = this.players.filter((p) => this.alive.has(p) && this.roles.get(p) === 'mafia');
+    if (target === null) return { to, target: null };
+    const aim = focusField(target, 'target');
+    if (typeof aim !== 'string' || aim === sender || !this.alive.has(aim)) return null;
+    return { to, target: { target: aim } };
   }
 
   pendingPlayers(): string[] {

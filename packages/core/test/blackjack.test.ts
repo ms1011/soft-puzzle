@@ -38,6 +38,33 @@ describe('BlackjackEngine', () => {
     return e;
   }
 
+  it('정산 단계 view는 좌석마다 결과와 칩 증감을 담고, 증감은 실제 칩 변화와 같다', () => {
+    type Outcome = { kind: 'win' | 'lose' | 'push' | 'blackjack' | 'bust'; delta: number };
+    type Seat = { chips: number; outcome?: Outcome };
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const e = startGame(seed);
+      const before = (e.getViewFor('철수').you as Seat).chips; // 베팅 전 칩
+      const beforeOther = (e.getViewFor('영희').you as Seat).chips;
+      expect((e.getViewFor('철수').you as Seat).outcome).toBeUndefined();
+      advanceToSettle(e);
+      const me = e.getViewFor('철수');
+      expect(me.phase).toBe('settle');
+      const you = me.you as Seat;
+      expect(you.outcome).toBeDefined();
+      expect(you.outcome!.delta).toBe(you.chips - before);
+      const other = (me.others as ({ nickname: string } & Seat)[]).find((o) => o.nickname === '영희')!;
+      expect(other.outcome!.delta).toBe(other.chips - beforeOther);
+    }
+  });
+
+  it('다음 베팅 라운드가 열리면 정산 결과는 지워진다', () => {
+    const e = advanceToSettle(startGame(1));
+    e.handleAction('철수', { name: 'ready' });
+    e.handleAction('영희', { name: 'ready' });
+    expect(e.getViewFor('철수').phase).toBe('betting');
+    expect((e.getViewFor('철수').you as { outcome?: unknown }).outcome).toBeUndefined();
+  });
+
   it('베팅 전원 완료 시 딜하고 acting으로 간다', () => {
     const e = startGame();
     expect(e.getViewFor('철수').phase).toBe('betting');

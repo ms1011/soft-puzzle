@@ -209,6 +209,39 @@ describe('BlackjackView', () => {
     unmount();
   });
 
+  it('정산 단계에서 좌석마다 결과 배지(승패·칩 증감)를 붙인다', () => {
+    const view = {
+      ...actingView,
+      phase: 'settle' as const,
+      yourActions: ['ready'],
+      you: { ...actingView.you, bet: 0, chips: 1015, outcome: { kind: 'blackjack', delta: 15 } },
+      others: [{ ...actingView.others[0]!, bet: 0, chips: 980, outcome: { kind: 'bust', delta: -10 } }],
+      dealer: { hand: ['9S', '8D'], hiddenCount: 0 },
+    };
+    const { lastFrame, unmount } = render(<BlackjackView {...baseProps({ view })} />);
+    const lines = (lastFrame() ?? '').split('\n');
+    expect(lines.find((l) => l.includes('철수'))).toContain('블랙잭! +15');
+    expect(lines.find((l) => l.includes('영희'))).toContain('버스트 -10');
+    unmount();
+  });
+
+  it('정산 배지는 승리·패배·푸시를 구분한다', () => {
+    const seat = (nickname: string, kind: string, delta: number) => ({ ...actingView.others[0]!, nickname, bet: 0, outcome: { kind, delta } });
+    const view = {
+      ...actingView,
+      phase: 'settle' as const,
+      yourActions: [],
+      others: [seat('영희', 'win', 10), seat('민수', 'lose', -10), seat('지민', 'push', 0)],
+      dealer: { hand: ['9S', '8D'], hiddenCount: 0 },
+    };
+    const { lastFrame, unmount } = render(<BlackjackView {...baseProps({ view })} />);
+    const lines = (lastFrame() ?? '').split('\n');
+    expect(lines.find((l) => l.includes('영희'))).toContain('승리 +10');
+    expect(lines.find((l) => l.includes('민수'))).toContain('패배 -10');
+    expect(lines.find((l) => l.includes('지민'))).toContain('푸시');
+    unmount();
+  });
+
   it('빈 손패(관전자)와 상대 1명만 있어도 예외 없이 렌더된다', () => {
     const spectatorView = {
       phase: 'betting' as const,

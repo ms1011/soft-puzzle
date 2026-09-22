@@ -40,6 +40,12 @@ interface Seat {
 
 type Phase = 'betting' | 'acting' | 'settle';
 
+/** 한 판 정산 결과. delta는 이번 판으로 늘거나 준 칩(베팅 전 대비)이다. */
+interface Outcome {
+  kind: 'win' | 'lose' | 'push' | 'blackjack' | 'bust';
+  delta: number;
+}
+
 function fmtChips(n: number): string {
   return `칩 ${n.toLocaleString('ko-KR')}`;
 }
@@ -77,6 +83,8 @@ export class BlackjackEngine implements GameEngine {
   private deck: Card[] = [];
   private phase: Phase = 'betting';
   private ready = new Set<string>();
+  /** 이번 판 정산 결과. 다음 베팅 라운드가 열릴 때 지운다. */
+  private outcomes = new Map<string, Outcome>();
   private finished = false;
   private finalResult: { ranking: { nickname: string; detail: string }[] } | null = null;
 
@@ -117,6 +125,7 @@ export class BlackjackEngine implements GameEngine {
    * pendingPlayers()가 빈 채로 영원히 멈추는 상태를 만들지 않는다.
    */
   private beginBettingRound(): EngineEvent[] {
+    this.outcomes = new Map();
     for (const p of this.order) {
       const seat = this.seats.get(p)!;
       seat.hand = [];
@@ -329,27 +338,38 @@ export class BlackjackEngine implements GameEngine {
       const playerTotal = handValue(seat.hand).total;
       const playerBJ = isNaturalBlackjack(seat.hand);
 
+      const record = (kind: Outcome['kind'], delta: number): void => {
+        this.outcomes.set(p, { kind, delta });
+      };
       if (playerBust) {
+        record('bust', -bet);
         events.push({ text: `${p}님 패배 (버스트, 베팅 ${bet.toLocaleString('ko-KR')} 상실)` });
       } else if (playerBJ && dealerBJ) {
         seat.chips += bet;
+        record('push', 0);
         events.push({ text: `${p}님 푸시 (둘 다 블랙잭)` });
       } else if (playerBJ) {
         const payout = bet + Math.round(bet * 1.5);
         seat.chips += payout;
+        record('blackjack', payout - bet);
         events.push({ text: `${p}님 블랙잭! 1.5배 승리 (+${(payout - bet).toLocaleString('ko-KR')})` });
       } else if (dealerBJ) {
+        record('lose', -bet);
         events.push({ text: `${p}님 패배 (딜러 블랙잭)` });
       } else if (dealerBust) {
         seat.chips += bet * 2;
+        record('win', bet);
         events.push({ text: `${p}님 승리! 딜러 버스트 (+${bet.toLocaleString('ko-KR')})` });
       } else if (playerTotal > dealerTotal) {
         seat.chips += bet * 2;
+        record('win', bet);
         events.push({ text: `${p}님 승리! (${playerTotal} vs ${dealerTotal})` });
       } else if (playerTotal === dealerTotal) {
         seat.chips += bet;
+        record('push', 0);
         events.push({ text: `${p}님 푸시 (${playerTotal} vs ${dealerTotal})` });
       } else {
+        record('lose', -bet);
         events.push({ text: `${p}님 패배 (${playerTotal} vs ${dealerTotal})` });
       }
       seat.bet = 0;
@@ -405,6 +425,7 @@ export class BlackjackEngine implements GameEngine {
           bet: s.bet,
           isTurn: this.phase === 'acting' && this.roundOrder[this.turnIdx] === p,
           spectating: s.spectating,
+          ...this.outcomeFor(p),
         };
       });
 
@@ -414,6 +435,7 @@ export class BlackjackEngine implements GameEngine {
           chips: seat.chips,
           bet: seat.bet,
           spectating: seat.spectating,
+          ...this.outcomeFor(player),
         }
       : { hand: [], chips: 0, bet: 0, spectating: true };
 
@@ -424,6 +446,12 @@ export class BlackjackEngine implements GameEngine {
       others,
       dealer: { hand: dealerHand, hiddenCount: dealerHiddenCount },
     };
+  }
+
+  /** 정산 단계에서만 좌석에 붙이는 결과(관전 등으로 이번 판에 없던 좌석은 비운다). */
+  private outcomeFor(player: string): { outcome?: Outcome } {
+    const outcome = this.phase === 'settle' ? this.outcomes.get(player) : undefined;
+    return outcome === undefined ? {} : { outcome: { ...outcome } };
   }
 
   private yourActions(player: string): string[] {

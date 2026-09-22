@@ -12,11 +12,39 @@ const MIN_BET = 10;
 const BET_STEP = 10;
 const BET_COARSE_STEP = 100;
 
+/** 정산 결과. 정산 단계에서만 오고, 이 필드가 없던 옛 서버와 붙으면 undefined다. */
+interface Outcome {
+  kind: 'win' | 'lose' | 'push' | 'blackjack' | 'bust';
+  delta: number;
+}
+
 interface Seat {
   hand: Card[];
   chips: number;
   bet: number;
   spectating: boolean;
+  outcome?: Outcome;
+}
+
+const OUTCOME_LABELS: Record<Outcome['kind'], string> = {
+  win: '승리',
+  lose: '패배',
+  push: '푸시',
+  blackjack: '블랙잭!',
+  bust: '버스트',
+};
+
+/** 결과 배지 — 결과 알림 로그를 읽지 않아도 누가 얼마를 따고 잃었는지 좌석 옆에서 바로 보인다. */
+function OutcomeBadge({ outcome }: { outcome: Outcome }): React.JSX.Element {
+  const color = outcome.delta > 0 ? 'green' : outcome.delta < 0 ? 'red' : 'yellow';
+  const amount = outcome.delta === 0 ? '' : ` ${outcome.delta > 0 ? '+' : '-'}${Math.abs(outcome.delta).toLocaleString('ko-KR')}`;
+  return (
+    <Text bold color={color}>
+      {'  '}
+      {OUTCOME_LABELS[outcome.kind]}
+      {amount}
+    </Text>
+  );
 }
 
 interface OtherSeat extends Seat {
@@ -55,6 +83,7 @@ function SeatRows({
   label,
   cards,
   totalText,
+  outcome,
   isYou,
   isTurn,
   theme,
@@ -62,6 +91,7 @@ function SeatRows({
   label: string;
   cards: (Card | 'back')[];
   totalText?: string;
+  outcome?: Outcome;
   isYou: boolean;
   isTurn: boolean;
   theme: GameViewProps['theme'];
@@ -73,6 +103,7 @@ function SeatRows({
         {isTurn ? `${marker} ` : '  '}
         {label}
         {totalText !== undefined ? ` ${totalText}` : ''}
+        {outcome !== undefined && <OutcomeBadge outcome={outcome} />}
       </Text>
       {cards.length > 0 && (
         <CardRows rows={renderHandSegments(cards, theme)} bold={isYou} color={isYou ? 'cyan' : undefined} />
@@ -181,6 +212,7 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
               label={`${seat.nickname}${isYou ? ' (나)' : ''} ${parts.join(' ')}`}
               cards={seat.hand}
               totalText={total !== undefined ? `(${total})` : undefined}
+              outcome={v.phase === 'settle' ? seat.outcome : undefined}
               isYou={isYou}
               isTurn={seat.isTurn}
               theme={theme}

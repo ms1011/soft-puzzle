@@ -50,7 +50,9 @@ describe('LasVegasView', () => {
     expect(frame).toContain('[5]');
     expect(frame).toContain('$90,000');
     expect(frame).toContain('$60,000');
-    expect(frame).toContain('4번 [4]');
+    expect(frame).toContain('4번');
+    expect(frame).not.toContain('4번 [4]'); // 머리글의 번호 중복을 없앴다
+    expect(frame).toContain('1번 2개'); // 대신 그 카지노에 놓인 주사위 총수
     expect(frame).toContain('$130,000');
     expect(frame).toContain('철수 (나)');
     expect(frame).toContain('주사위 5개');
@@ -130,7 +132,7 @@ describe('LasVegasView', () => {
     const { lastFrame, unmount } = render(<LasVegasView {...baseProps()} />);
     const frame = lastFrame() ?? '';
     expect(frame).toContain('5번에 3개 걸면 → $40,000');
-    expect(frame).toContain('5번 [5] +3');
+    expect(frame).toContain('5번 +3');
     expect(frame.split('\n').some((l) => /\(나\)\s+3 \$40k/.test(l))).toBe(true);
     unmount();
   });
@@ -144,6 +146,37 @@ describe('LasVegasView', () => {
     stdin.write('2'); // 2는 두 개 나왔다 → 영희 2개와 동수
     await tick();
     expect(lastFrame()).toContain('2번에 2개 걸면 → 무효 (영희와 동수)');
+    unmount();
+  });
+
+  it('플레이어는 가진 돈 순으로 순위를 붙여 보여준다', () => {
+    const view = makeView({
+      players: [
+        { nickname: '철수', diceLeft: 8, money: 90, bills: 1, isTurn: true },
+        { nickname: '영희', diceLeft: 5, money: 130, bills: 2, isTurn: false },
+      ],
+    });
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ view })} />);
+    const lines = (lastFrame() ?? '').split('\n');
+    const first = lines.findIndex((l) => l.includes('1위'));
+    const second = lines.findIndex((l) => l.includes('2위'));
+    expect(lines[first]).toContain('영희');
+    expect(lines[second]).toContain('철수');
+    expect(first).toBeLessThan(second);
+    unmount();
+  });
+
+  it('지난 라운드 정산을 카지노별로 한 줄에 보여준다', () => {
+    const view = makeView({
+      lastPayout: [
+        { casino: 1, awards: [{ nickname: '영희', bill: 60 }] },
+        { casino: 3, awards: [{ nickname: '철수', bill: 90 }, { nickname: '영희', bill: 20 }] },
+      ],
+    });
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ view })} />);
+    const line = (lastFrame() ?? '').split('\n').find((l) => l.includes('지난 정산'))!;
+    expect(line).toContain('1번 영희 $60k');
+    expect(line).toContain('3번 (나) $90k, 영희 $20k');
     unmount();
   });
 
@@ -185,9 +218,9 @@ describe('LasVegasView', () => {
     const frame = lastFrame() ?? '';
     const lines = frame.split('\n');
     for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(80);
-    // 헤더 1 + 빈 줄 + 주사위 6 + 빈 줄 + 카지노(머리 1 + 지폐 5 + 구분선 1 + 주사위 6) + 빈 줄
-    // + 플레이어 6 + 빈 줄 + 힌트 1 = 31줄. 접힌 줄이 하나라도 있으면 어긋난다.
-    expect(lines.length).toBe(31);
+    // 헤더 1 + 빈 줄 + 주사위 6 + 빈 줄 + 카지노(머리 1 + 지폐 5 + 구분선 1 + 주사위 6) + 지난 정산 1
+    // + 빈 줄 + 플레이어 6 + 빈 줄 + 힌트 1 = 32줄. 접힌 줄이 하나라도 있으면 어긋난다.
+    expect(lines.length).toBe(32);
     expect(frame).not.toContain(longNick);
     // 한 카지노 칸 안에 6명 전원이 각자 한 줄로 들어가 있다.
     expect(lines.filter((l) => l.includes('(나)')).length).toBeGreaterThan(0);

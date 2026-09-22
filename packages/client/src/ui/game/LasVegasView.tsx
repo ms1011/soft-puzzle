@@ -80,6 +80,19 @@ function standings(c: LasVegasCasino, extra?: { nickname: string; count: number 
     .map((d) => ({ nickname: d.nickname, count: d.count, bill: awards.get(d.nickname), tied: (freq.get(d.count) ?? 0) > 1 }));
 }
 
+function totalDice(c: LasVegasCasino): number {
+  return c.dice.reduce((sum, d) => sum + d.count, 0);
+}
+
+/** 가진 돈 순(같으면 지폐 수 순, 엔진 최종 순위와 같은 기준)으로 세우고 공동 순위를 매긴다. */
+function ranked(players: LasVegasPlayer[]): (LasVegasPlayer & { rank: number })[] {
+  const sorted = [...players].sort((a, b) => b.money - a.money || (b.bills ?? 0) - (a.bills ?? 0));
+  return sorted.map((p, i) => {
+    const firstSame = sorted.findIndex((q) => q.money === p.money && (q.bills ?? 0) === (p.bills ?? 0));
+    return { ...p, rank: (firstSame === -1 ? i : firstSame) + 1 };
+  });
+}
+
 function padDisplay(str: string, width: number): string {
   return str + ' '.repeat(Math.max(0, width - displayWidth(str)));
 }
@@ -182,6 +195,16 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
     return `${head}받지 못함`;
   }
 
+  /** 지난 라운드 정산을 카지노별로 한 줄에 — 사람별 합계만으로는 어디서 무엇을 받았는지 사라진다. */
+  function lastPayoutText(): string | undefined {
+    const paid = (v.lastPayout ?? []).filter((p) => p.awards.length > 0);
+    if (paid.length === 0) return undefined;
+    const who = (nick: string): string => (nick === you ? '(나)' : fitNick(nick, CASINO_NICK_CAP));
+    return `지난 정산: ${paid
+      .map((p) => `${p.casino}번 ${p.awards.map((a) => `${who(a.nickname)} ${shortMoney(a.bill)}`).join(', ')}`)
+      .join(sep(theme))}`;
+  }
+
   function casinoColumn(c: LasVegasCasino): React.JSX.Element {
     const isSel = c.number === highlight;
     const entries = standingsOf.get(c.number) ?? [];
@@ -190,7 +213,9 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
       <Box key={c.number} flexDirection="column" width={CASINO_COL} flexShrink={0}>
         <Text bold={isSel} color={isSel ? 'yellow' : undefined}>
           {marker}
-          {`${c.number}번 [${c.number}]`}
+          {`${c.number}번`}
+          {/* 카지노 번호가 곧 주사위 눈이라 [n]은 중복이다 — 대신 그 칸에 놓인 주사위 총수를 보여준다. */}
+          {totalDice(c) > 0 ? ` ${totalDice(c)}개` : ''}
           {isSel && placing !== undefined ? ` +${placing.count}` : ''}
         </Text>
         {Array.from({ length: maxBills }, (_, i) => (
@@ -249,17 +274,22 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
       <Box flexDirection="row" marginTop={1}>
         {v.casinos.map(casinoColumn)}
       </Box>
+      {lastPayoutText() !== undefined && (
+        <Text dimColor wrap="truncate-end">
+          {lastPayoutText()}
+        </Text>
+      )}
 
       <Box flexDirection="column" marginTop={1}>
-        {v.players.map((p) => {
+        {ranked(v.players).map((p) => {
           const isYou = p.nickname === you;
-          const name = `${p.isTurn ? turnGlyph(theme) : ' '} ${padDisplay(
+          const name = `${p.isTurn ? turnGlyph(theme) : ' '} ${p.rank}위 ${padDisplay(
             fitNick(p.nickname, PLAYER_NICK_CAP) + (isYou ? YOU_SUFFIX : ''),
             nickWidth,
           )}`;
           const won = lastWon.get(p.nickname);
           return (
-            <Text key={p.nickname} bold={p.isTurn} color={isYou ? 'cyan' : undefined} wrap="truncate-end">
+            <Text key={p.nickname} bold={p.isTurn} color={colorOf.get(p.nickname)} wrap="truncate-end">
               {name} {padDisplay(money(p.money), 10)} 주사위 {p.diceLeft}개
               {p.bills !== undefined ? `${sep(theme)}지폐 ${p.bills}장` : ''}
               {won !== undefined ? `${sep(theme)}지난 라운드 +${money(won)}` : ''}

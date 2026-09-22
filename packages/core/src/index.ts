@@ -31,4 +31,4 @@ export { DavinciEngine } from './games/davinci.js';
 export { LiarEngine } from './games/liar.js';
 export { IndianPokerEngine } from './games/indianPoker.js';
 export { YutEngine } from './games/yut.js';
-export { LasVegasEngine } from './games/lasVegas.js';
+export { LasVegasEngine, payout as lasVegasPayout } from './games/lasVegas.js';

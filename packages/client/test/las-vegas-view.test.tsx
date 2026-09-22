@@ -115,6 +115,38 @@ describe('LasVegasView', () => {
     unmount();
   });
 
+  it('카지노 칸마다 지금 받게 될 지폐를 적고, 동수는 무효로 표시한다', () => {
+    const view = makeView({ yourActions: [], turnPlayer: '영희' });
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ view })} />);
+    const lines = (lastFrame() ?? '').split('\n');
+    // 1번: 영희 2개 단독 → 가장 큰 지폐 $60k. 3번: 철수 1 · 영희 1 동수 → 둘 다 무효.
+    expect(lines.some((l) => /영희\s+2 \$60k/.test(l))).toBe(true);
+    expect(lines.some((l) => /\(나\)\s+1 무효/.test(l))).toBe(true);
+    unmount();
+  });
+
+  it('고른 눈의 카지노에 걸었을 때의 결과를 미리 보여준다', () => {
+    // 기본 선택은 가장 많이 나온 5(3개). 5번 카지노는 비어 있어 가장 큰 지폐 $40,000을 받는다.
+    const { lastFrame, unmount } = render(<LasVegasView {...baseProps()} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('5번에 3개 걸면 → $40,000');
+    expect(frame).toContain('5번 [5] +3');
+    expect(frame.split('\n').some((l) => /\(나\)\s+3 \$40k/.test(l))).toBe(true);
+    unmount();
+  });
+
+  it('걸면 동수가 되는 경우 무효라고 미리 알린다', async () => {
+    const view = makeView({
+      casinos: makeView().casinos.map((c) => (c.number === 2 ? { ...c, dice: [{ nickname: '영희', count: 2 }] } : c)),
+    });
+    const { lastFrame, stdin, unmount } = render(<LasVegasView {...baseProps({ view })} />);
+    await tick();
+    stdin.write('2'); // 2는 두 개 나왔다 → 영희 2개와 동수
+    await tick();
+    expect(lastFrame()).toContain('2번에 2개 걸면 → 무효 (영희와 동수)');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII·한글만 쓴다', () => {
     const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

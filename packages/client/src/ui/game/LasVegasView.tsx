@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
+import { lasVegasPayout } from '@soft-puzzle/core';
 import { renderDie } from '../../art/dice.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { sep, turnGlyph } from './glyphs.js';
@@ -34,8 +35,10 @@ interface LasVegasGameView {
 
 /** 카지노 한 칸의 폭(구분 공백 포함). 6곳 × 13 = 78칼럼이라 80칼럼 터미널에 한 줄로 들어간다. */
 const CASINO_COL = 13;
-/** 카지노 칸 안 닉네임 표시 폭 상한 — "닉네임 + 공백 + 개수"가 칸 안에 들어가야 한다. */
-const CASINO_NICK_CAP = 8;
+/** 카지노 칸 안 닉네임 표시 폭 상한 — " 닉네임 개수 $90k"(1+5+1+1+1+4=13)가 칸 안에 들어가야 한다. */
+const CASINO_NICK_CAP = 5;
+/** 다른 플레이어 색(참가 순서대로). "나"는 다른 화면들과 같이 cyan, 노랑은 내 선택·미리보기 강조에 쓴다. */
+const OTHER_COLORS = ['magenta', 'green', 'blue', 'red', 'white'];
 /** 플레이어 줄의 닉네임 표시 폭 상한. */
 const PLAYER_NICK_CAP = 12;
 const YOU_SUFFIX = ' (나)';
@@ -43,6 +46,38 @@ const YOU_SUFFIX = ' (나)';
 /** 천 달러 단위 금액을 `$60,000`로 적는다(엔진의 formatMoney와 같은 표기). */
 function money(thousands: number): string {
   return '$' + String(Math.round(thousands * 1000)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** 카지노 칸에 들어가는 짧은 금액 표기(`$60k`). 지폐는 $10k~$90k라 항상 4칸이다. */
+function shortMoney(thousands: number): string {
+  return `$${thousands}k`;
+}
+
+interface Standing {
+  nickname: string;
+  count: number;
+  /** 지금 정산하면 받는 지폐(천 달러). 동수로 무효거나 순위 밖이면 undefined. */
+  bill?: number;
+  tied: boolean;
+}
+
+/**
+ * 카지노 한 곳을 지금 정산하면 누가 무엇을 받는지. 규칙은 엔진의 정산 함수(lasVegasPayout)를 그대로
+ * 써서 화면과 실제 정산이 어긋나지 않게 한다. extra가 있으면 그 사람이 주사위를 더 건 뒤의 결과다.
+ */
+function standings(c: LasVegasCasino, extra?: { nickname: string; count: number }): Standing[] {
+  const counts = c.dice.filter((d) => d.count > 0).map((d) => ({ ...d }));
+  if (extra !== undefined) {
+    const mine = counts.find((d) => d.nickname === extra.nickname);
+    if (mine) mine.count += extra.count;
+    else counts.push({ ...extra });
+  }
+  const awards = new Map(lasVegasPayout(c.bills, counts).map((a) => [a.nickname, a.bill]));
+  const freq = new Map<number, number>();
+  for (const d of counts) freq.set(d.count, (freq.get(d.count) ?? 0) + 1);
+  return counts
+    .sort((a, b) => b.count - a.count)
+    .map((d) => ({ nickname: d.nickname, count: d.count, bill: awards.get(d.nickname), tied: (freq.get(d.count) ?? 0) > 1 }));
 }
 
 function padDisplay(str: string, width: number): string {
@@ -123,20 +158,40 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
   }
 
   const maxBills = Math.max(1, ...v.casinos.map((c) => c.bills.length));
-  const maxEntries = Math.max(1, ...v.casinos.map((c) => c.dice.filter((d) => d.count > 0).length));
+
+  // 내가 고른 눈을 걸면 그 카지노에 놓일 주사위 수 — 그 카지노만 건 뒤의 결과로 미리 보여준다.
+  const placing = highlight !== undefined ? { nickname: you, count: dice.filter((d) => d === highlight).length } : undefined;
+  const standingsOf = new Map(v.casinos.map((c) => [c.number, standings(c, c.number === highlight ? placing : undefined)]));
+  const maxEntries = Math.max(1, ...[...standingsOf.values()].map((s) => s.length));
+
+  // 다른 플레이어마다 고정 색 — 카지노 칸에서 닉네임을 읽지 않아도 누구 주사위인지 보인다.
+  const colorOf = new Map(v.players.filter((p) => p.nickname !== you).map((p, i) => [p.nickname, OTHER_COLORS[i % OTHER_COLORS.length]!]));
+  colorOf.set(you, 'cyan');
+
+  /** 미리보기 문장: 고른 눈을 걸면 나는 무엇을 받게 되는가. */
+  function previewText(): string | undefined {
+    if (highlight === undefined || placing === undefined) return undefined;
+    const mine = standingsOf.get(highlight)?.find((s) => s.nickname === you);
+    if (mine === undefined) return undefined;
+    const head = `${highlight}번에 ${placing.count}개 걸면 ${theme.unicode ? '→' : '->'} `;
+    if (mine.bill !== undefined) return head + money(mine.bill);
+    if (mine.tied) {
+      const rivals = (standingsOf.get(highlight) ?? []).filter((s) => s.count === mine.count && s.nickname !== you).map((s) => fitNick(s.nickname, CASINO_NICK_CAP));
+      return `${head}무효 (${rivals.join(theme.unicode ? '·' : ', ')}와 동수)`;
+    }
+    return `${head}받지 못함`;
+  }
 
   function casinoColumn(c: LasVegasCasino): React.JSX.Element {
     const isSel = c.number === highlight;
-    const entries = c.dice.filter((d) => d.count > 0).sort((a, b) => b.count - a.count);
-    // 같은 개수가 둘 이상이면 정산 때 무효가 되므로 흐리게 보여준다.
-    const freq = new Map<number, number>();
-    for (const e of entries) freq.set(e.count, (freq.get(e.count) ?? 0) + 1);
+    const entries = standingsOf.get(c.number) ?? [];
     const marker = isSel ? (theme.unicode ? '▶' : '>') : ' ';
     return (
       <Box key={c.number} flexDirection="column" width={CASINO_COL} flexShrink={0}>
         <Text bold={isSel} color={isSel ? 'yellow' : undefined}>
           {marker}
           {`${c.number}번 [${c.number}]`}
+          {isSel && placing !== undefined ? ` +${placing.count}` : ''}
         </Text>
         {Array.from({ length: maxBills }, (_, i) => (
           <Text key={`b${i}`} color="green">
@@ -149,11 +204,15 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
           if (!e) return <Text key={`d${i}`}> </Text>;
           const isYou = e.nickname === you;
           const name = isYou ? '(나)' : fitNick(e.nickname, CASINO_NICK_CAP);
-          const tied = (freq.get(e.count) ?? 0) > 1;
+          // 같은 개수가 둘 이상이면 정산 때 무효 — 흐리게 그리고 '무효'라고 적는다.
+          const outcome = e.bill !== undefined ? ` ${shortMoney(e.bill)}` : e.tied ? ' 무효' : '';
+          // 미리보기 중인 내 줄은 노랑으로 — 아직 건 게 아니라 "걸면 이렇게 된다"는 뜻이다.
+          const color = isYou && isSel ? 'yellow' : colorOf.get(e.nickname);
           return (
-            <Text key={`d${i}`} dimColor={tied} color={isYou ? 'cyan' : undefined} bold={isYou}>
+            <Text key={`d${i}`} dimColor={e.tied} color={color} bold={isYou}>
               {' '}
               {padDisplay(name, CASINO_NICK_CAP)} {e.count}
+              {outcome}
             </Text>
           );
         })}
@@ -210,10 +269,19 @@ export function LasVegasView({ view, you, send, theme }: GameViewProps): React.J
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor wrap="truncate-end">
-          {canPlace
-            ? `${theme.unicode ? '←/→' : '좌/우'} 또는 1~6 눈 선택${sep(theme)}Enter ${face ?? ''}번 카지노에 걸기`
-            : '다른 사람이 주사위를 거는 중입니다. 같은 개수는 정산 때 무효입니다.'}
+        {/* 미리보기 문장을 안내 줄 앞에 둔다 — 줄을 늘리지 않고, 좁으면 키 안내부터 잘린다. */}
+        <Text wrap="truncate-end">
+          {canPlace && previewText() !== undefined && (
+            <Text bold color="yellow">
+              {previewText()}
+              {'  '}
+            </Text>
+          )}
+          <Text dimColor>
+            {canPlace
+              ? `${theme.unicode ? '←/→' : '좌/우'} 또는 1~6 눈 선택${sep(theme)}Enter 걸기`
+              : '다른 사람이 주사위를 거는 중입니다. 같은 개수는 정산 때 무효입니다.'}
+          </Text>
         </Text>
       </Box>
     </Box>

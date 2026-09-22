@@ -7,6 +7,7 @@ import { isRedCard, renderCard, renderHandSegments } from '../../art/cards.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { CardRows } from './CardRows.js';
 import { turnGlyph } from './glyphs.js';
+import { useFocusBroadcast } from '../focus.js';
 import type { GameViewProps } from './types.js';
 
 /** cards.ts의 카드 아트 상수(테두리 사이 5칸 + 좌우 테두리 2칸)를 그대로 따른다 — 겹친 손패에서
@@ -96,12 +97,15 @@ export function renderLiftedHand(
   return rows;
 }
 
-/** 상대 한 명의 칸 폭 — 뒷면 8장(2×7+7=21)과 ' +N', 옆 칸과의 여백이 들어가고, 80칼럼에 3명씩(78칼럼) 나란히 놓인다. */
+/** 상대 한 명의 칸 폭 — 뒷면 7장(들어 올리면 24칸)과 옆 칸과의 여백이 들어가고, 80칼럼에 3명씩(78칼럼) 나란히 놓인다. */
 const OPPONENT_WIDTH = 26;
-/** 상대 손패를 그리는 최대 장수. 넘치면 '+N'으로 나머지를 알린다 — 20장을 쥐어도 칸이 넘치지 않는다. */
-const OPPONENT_VISIBLE_CARDS = 8;
-/** 상대 닉네임 표시 폭 상한(차례 표시 2칸, ' NN장' 5칸, 옆 칸과의 여백을 뺀 나머지). */
-const OPPONENT_NICK_CAP = OPPONENT_WIDTH - 10;
+/**
+ * 상대 손패를 그리는 최대 장수. 고민 중인 중간 카드를 들어 올리면 그 장은 온전한 폭이라
+ * 2×5+7+7=24칸 — 칸 폭 26 안에 들어간다. 넘치는 장수는 닉네임 줄에 +N으로 알린다.
+ */
+const OPPONENT_VISIBLE_CARDS = 7;
+/** 상대 닉네임 표시 폭 상한(차례 표시 2칸, ' NN장' 5칸, ' +NN' 4칸, 옆 칸과의 여백을 뺀 나머지). */
+const OPPONENT_NICK_CAP = OPPONENT_WIDTH - 14;
 
 function padCenter(str: string, width: number): string {
   const pad = Math.max(0, width - displayWidth(str));
@@ -114,21 +118,33 @@ function padCenter(str: string, width: number): string {
  * (handCount만) 전부 'back'이다. renderLiftedHand로 그려 맨 윗줄을 비워 두는데, 상대가 고민
  * 중인 카드를 한 장 들어 올려 보여줄 자리다 — 들어 올릴 때 레이아웃이 밀리지 않는다.
  */
-function OpponentHand({ player, theme }: { player: OtherPlayer; theme: GameViewProps['theme'] }): React.JSX.Element {
+function OpponentHand({
+  player,
+  focusIndex,
+  theme,
+}: {
+  player: OtherPlayer;
+  focusIndex: number | null;
+  theme: GameViewProps['theme'];
+}): React.JSX.Element {
   const visible = Math.min(player.handCount, OPPONENT_VISIBLE_CARDS);
   const hidden = player.handCount - visible;
+  // 그려지지 않은 카드(+N 쪽)를 고민 중이면 카드를 들지 않고 +N을 강조한다.
+  const liftIndex = focusIndex !== null && focusIndex < visible ? focusIndex : -1;
+  const focusOnHidden = focusIndex !== null && focusIndex >= visible;
   const backs = Array<Card>(visible).fill('back');
-  const rows = visible > 0 ? renderLiftedHand(backs, -1, [], theme) : [];
+  const rows = visible > 0 ? renderLiftedHand(backs, liftIndex, [], theme) : [];
   return (
     <Box flexDirection="column" width={OPPONENT_WIDTH} marginBottom={1}>
       <Text bold={player.isTurn} wrap="truncate-end">
         {player.isTurn ? `${turnGlyph(theme)} ` : '  '}
         {truncateDisplay(player.nickname, OPPONENT_NICK_CAP)} {player.handCount}장
+        {hidden > 0 && <Text color={focusOnHidden ? 'yellow' : undefined}> +{hidden}</Text>}
       </Text>
       {visible === 0 ? (
         <Text dimColor>  (손패 없음)</Text>
       ) : (
-        <CardRows rows={rows.map((row, r) => (r === 3 && hidden > 0 ? [...row, { text: ` +${hidden}`, playable: true, red: false }] : row))} />
+        <CardRows rows={rows.map((row) => row.map((seg, i) => (i === liftIndex ? { ...seg, color: 'yellow' } : seg)))} />
       )}
     </Box>
   );
@@ -142,7 +158,7 @@ function OpponentHand({ player, theme }: { player: OtherPlayer; theme: GameViewP
  * dimColor로 흐리게 보여줄(브리프 결정: 명시적으로 켜기로 함) 뿐 규칙을 스스로 강제하지
  * 않는다.
  */
-export function OneCardView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
+export function OneCardView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
   const v = view as unknown as OneCardGameView;
   const actions = v.yourActions;
   const hand = v.you.hand;
@@ -218,6 +234,15 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
 
   // canPlay는 힌트일 뿐이다 — 내 턴이 아니면(canAct===false) "낼 수 없다"는 신호 자체가
   // 무의미하므로 전부 playable 취급해 흐리게 보이지 않게 한다.
+  // 내 차례에 낼 수 있을 때만 "몇 번째 카드를 보고 있는지"를 알린다(카드 내용은 보내지 않는다).
+  useFocusBroadcast(sendFocus, canPlayAction && hand.length > 0 ? { index: cursor } : null, view);
+
+  /** 차례인 상대가 고민 중인 카드 위치. 차례가 아닌 사람의 커서는 서버가 애초에 보내지 않는다. */
+  function focusIndexOf(o: OtherPlayer): number | null {
+    const index = o.isTurn ? (focus?.[o.nickname] as { index?: unknown } | undefined)?.index : undefined;
+    return typeof index === 'number' ? index : null;
+  }
+
   const playableFlags = hand.map((c) =>
     canAct ? canPlay(c, v.top, v.declaredSuit, v.attackStack) : true,
   );
@@ -226,7 +251,7 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
     <Box flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap">
         {v.others.map((o) => (
-          <OpponentHand key={o.nickname} player={o} theme={theme} />
+          <OpponentHand key={o.nickname} player={o} focusIndex={focusIndexOf(o)} theme={theme} />
         ))}
       </Box>
 

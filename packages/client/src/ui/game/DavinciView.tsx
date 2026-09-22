@@ -4,6 +4,7 @@ import { useScreenInput } from '../inputLock.js';
 import { renderTile, TILE_HEIGHT, TILE_WIDTH } from '../../art/tiles.js';
 import type { TileKind } from '../../art/tiles.js';
 import { cursorGlyph, turnGlyph } from './glyphs.js';
+import { useFocusBroadcast } from '../focus.js';
 import type { GameViewProps } from './types.js';
 
 interface Tile { value: number | null; revealed: boolean; }
@@ -55,7 +56,7 @@ export function guessStrip(guess: number): string {
   return Array.from({ length: MAX_VALUE + 1 }, (_, n) => (n === guess ? `[${n}]` : ` ${n} `)).join('');
 }
 
-export function DavinciView({ view, you, send, theme }: GameViewProps): React.JSX.Element {
+export function DavinciView({ view, you, send, theme, focus, sendFocus }: GameViewProps): React.JSX.Element {
   const v = view as unknown as DavinciViewState;
   const targets = v.boards
     .filter((board) => board.nickname !== you && !board.eliminated)
@@ -77,6 +78,15 @@ export function DavinciView({ view, you, send, theme }: GameViewProps): React.JS
   });
 
   const selected = canGuess ? targets[cursor] : undefined;
+  useFocusBroadcast(sendFocus, selected !== undefined ? { player: selected.board.nickname, index: selected.index } : null, view);
+
+  // 차례인 다른 사람이 겨누는 타일. 내 선택과 동시에 있을 수 없다(차례는 한 명뿐이다).
+  const aimer = v.turnPlayer !== null && v.turnPlayer !== undefined && v.turnPlayer !== you ? v.turnPlayer : null;
+  const rawAim = aimer !== null ? (focus?.[aimer] as { player?: unknown; index?: unknown } | undefined) : undefined;
+  const aimed =
+    rawAim !== undefined && typeof rawAim.player === 'string' && typeof rawAim.index === 'number'
+      ? { player: rawAim.player, index: rawAim.index }
+      : null;
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -85,7 +95,9 @@ export function DavinciView({ view, you, send, theme }: GameViewProps): React.JS
       {v.boards.map((board) => {
         const isYou = board.nickname === you;
         const isTurn = v.turnPlayer === board.nickname;
-        const selectedIndex = selected !== undefined && selected.board.nickname === board.nickname ? selected.index : null;
+        const mine = selected !== undefined && selected.board.nickname === board.nickname ? selected.index : null;
+        const theirs = aimed !== null && aimed.player === board.nickname ? aimed.index : null;
+        const selectedIndex = mine ?? theirs;
         return (
           <Box key={board.nickname} flexDirection="column" marginTop={1} width={BOARD_WIDTH}>
             <Text bold={isYou || isTurn} color={isYou ? 'cyan' : undefined} dimColor={board.eliminated} wrap="truncate-end">
@@ -100,7 +112,7 @@ export function DavinciView({ view, you, send, theme }: GameViewProps): React.JS
                 {row.map((seg, i) => (
                   <Text
                     key={i}
-                    color={seg.selected ? 'cyan' : seg.kind === 'revealed' ? 'yellow' : undefined}
+                    color={seg.selected ? (mine !== null ? 'cyan' : 'magenta') : seg.kind === 'revealed' ? 'yellow' : undefined}
                     bold={seg.selected}
                     dimColor={seg.kind === 'mine'}
                   >
@@ -113,6 +125,19 @@ export function DavinciView({ view, you, send, theme }: GameViewProps): React.JS
         );
       })}
       </Box>
+      {aimed !== null && aimer !== null && (
+        <Box marginTop={1}>
+          {aimed.player === you ? (
+            <Text bold color="magenta">
+              {aimer}님이 내 {aimed.index + 1}번 타일을 노리고 있습니다!
+            </Text>
+          ) : (
+            <Text color="magenta">
+              {aimer}님이 {aimed.player}님의 {aimed.index + 1}번 타일을 노리는 중
+            </Text>
+          )}
+        </Box>
+      )}
       {canGuess && selected !== undefined && (
         <Box flexDirection="column" marginTop={1}>
           <Text>

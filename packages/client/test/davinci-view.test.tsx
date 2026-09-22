@@ -110,6 +110,33 @@ describe('DavinciView', () => {
     unmount();
   });
 
+  it('다른 사람이 겨누는 타일을 문구로 알리고, 내 타일이면 경고한다', () => {
+    const view = davinciView({ yourActions: [], isTurn: false, turnPlayer: '영희' });
+    const mine = render(<DavinciView {...baseProps({ view, focus: { 영희: { player: '철수', index: 2 } } })} />);
+    expect(mine.lastFrame()).toContain('영희님이 내 3번 타일을 노리고 있습니다!');
+    mine.unmount();
+  });
+
+  it('다른 사람끼리의 조준은 "노리는 중"으로 알린다', () => {
+    const view = davinciView({
+      yourActions: [],
+      isTurn: false,
+      turnPlayer: '영희',
+      boards: [...davinciView().boards, { nickname: '민수', eliminated: false, tiles: [{ value: null, revealed: false }, { value: null, revealed: false }] }],
+    });
+    const { lastFrame, unmount } = render(<DavinciView {...baseProps({ view, focus: { 영희: { player: '민수', index: 1 } } })} />);
+    expect(lastFrame()).toContain('영희님이 민수님의 2번 타일을 노리는 중');
+    unmount();
+  });
+
+  it('내 차례에 겨누는 타일을 sendFocus로 보낸다', async () => {
+    const sendFocus = vi.fn();
+    const { unmount } = render(<DavinciView {...baseProps({ sendFocus })} />);
+    await tick();
+    expect(sendFocus).toHaveBeenCalledWith({ player: '영희', index: 0 });
+    unmount();
+  });
+
   it('--ascii 테마에서 ASCII·한글 외 문자가 새지 않는다', () => {
     const { lastFrame, unmount } = render(<DavinciView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

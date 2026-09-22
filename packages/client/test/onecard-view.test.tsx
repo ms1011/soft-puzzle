@@ -142,12 +142,38 @@ describe('OneCardView', () => {
     unmount();
   });
 
-  it('상대가 8장을 넘게 쥐면 8장만 그리고 +N으로 나머지를 알린다', () => {
+  it('상대가 7장을 넘게 쥐면 7장만 그리고 닉네임 줄에 +N으로 나머지를 알린다', () => {
     const view = playingView({ others: [{ nickname: '영희', handCount: 12, isTurn: false }] });
     const { lastFrame, unmount } = render(<OneCardView {...baseProps({ view })} />);
-    const frame = lastFrame() ?? '';
-    expect(frame).toContain('영희 12장');
-    expect(frame).toContain('+4');
+    const nameLine = (lastFrame() ?? '').split('\n').find((line) => line.includes('영희'))!;
+    expect(nameLine).toContain('12장');
+    expect(nameLine).toContain('+5');
+    unmount();
+  });
+
+  it('차례인 상대의 focus 카드는 한 줄 들어 올려 그린다', () => {
+    const view = playingView({ yourActions: [], you: { hand: ['KH'], handCount: 1, isTurn: false }, others: [{ nickname: '영희', handCount: 3, isTurn: true }] });
+    const still = render(<OneCardView {...baseProps({ view })} />);
+    const lifted = render(<OneCardView {...baseProps({ view, focus: { 영희: { index: 0 } } })} />);
+    // 들어 올린 카드는 비워 둔 맨 윗줄(닉네임 바로 아래)에 윗테두리가 생긴다.
+    const rowBelowName = (frame: string): string => {
+      const lines = frame.split('\n');
+      return lines[lines.findIndex((l) => l.includes('영희')) + 1]!;
+    };
+    expect(rowBelowName(still.lastFrame() ?? '').trim()).toBe('');
+    expect(rowBelowName(lifted.lastFrame() ?? '')).toContain('┌');
+    still.unmount();
+    lifted.unmount();
+  });
+
+  it('내 차례에 커서 위치를 sendFocus로 보낸다', async () => {
+    const sendFocus = vi.fn();
+    const { stdin, unmount } = render(<OneCardView {...baseProps({ sendFocus })} />);
+    await tick();
+    expect(sendFocus).toHaveBeenCalledWith({ index: 0 });
+    stdin.write(RIGHT_ARROW);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(sendFocus).toHaveBeenLastCalledWith({ index: 1 });
     unmount();
   });
 

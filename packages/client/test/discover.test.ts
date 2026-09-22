@@ -229,7 +229,7 @@ describe('discoverRooms (scanner)', () => {
     expect(rooms[0].game).toBe('mafia');
   });
 
-  it.each(['davinci', 'liar', 'indianPoker'] as GameId[])('%s 방도 찾는다', async (game) => {
+  it.each(['davinci', 'liar', 'indianPoker', 'yut', 'lasVegas'] as GameId[])('%s 방도 찾는다', async (game) => {
     const fake = await bindLoopbackFakeResponder(() =>
       JSON.stringify(makeInfo({ room: `${game} 방`, game, addr: '127.0.0.1' })),
     );

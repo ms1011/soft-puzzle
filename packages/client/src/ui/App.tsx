@@ -28,6 +28,8 @@ import { MafiaView } from './game/MafiaView.js';
 import { DavinciView } from './game/DavinciView.js';
 import { LiarView } from './game/LiarView.js';
 import { IndianPokerView } from './game/IndianPokerView.js';
+import { YutView } from './game/YutView.js';
+import { LasVegasView } from './game/LasVegasView.js';
 import { TurnTimer } from './game/TurnTimer.js';
 import { reduceFocus } from './focus.js';
 import type { FocusMap } from './focus.js';
@@ -64,6 +66,8 @@ const GAME_VIEWS: Record<GameId, (props: GameViewProps) => React.JSX.Element> = 
   davinci: DavinciView,
   liar: LiarView,
   indianPoker: IndianPokerView,
+  yut: YutView,
+  lasVegas: LasVegasView,
 };
 
 /**

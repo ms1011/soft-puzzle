@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameId } from '@soft-puzzle/core';
 import { GAME_INFO } from '../gameLabels.js';
 
@@ -26,7 +27,7 @@ export interface LobbyProps {
 export function Lobby({ host, players, you, hostAddr, game, onStart, onLeave }: LobbyProps): React.JSX.Element {
   const youAreHost = you === host;
 
-  useInput((input, key) => {
+  useScreenInput((input, key) => {
     if (youAreHost && key.return) onStart();
     if (input === 'q' || key.escape) onLeave();
   });

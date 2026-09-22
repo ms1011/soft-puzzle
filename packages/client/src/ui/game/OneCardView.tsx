@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { Card, Suit } from '@soft-puzzle/core';
 import { canPlay, rankOf } from '@soft-puzzle/core';
 import { renderCard } from '../../art/cards.js';
@@ -116,7 +117,7 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
     if (!canAct) setSuitPrompt(null);
   }, [hand.length, canAct]);
 
-  useInput((input, key) => {
+  useScreenInput((input, key) => {
     if (!canAct) return;
 
     if (suitPrompt) {

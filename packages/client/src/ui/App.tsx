@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import os from 'node:os';
-import type { GameId, ServerMsg, RoomInfo, MafiaSettings } from '@soft-puzzle/core';
+import type { GameId, ServerMsg, RoomInfo, MafiaSettings, ChatChannel } from '@soft-puzzle/core';
 import { Room, resolveRespondAddr, startServer, startDiscovery } from '@soft-puzzle/server';
 import type { RunningServer, RunningDiscovery } from '@soft-puzzle/server';
 import { Connection, JoinError } from '../net/connection.js';
@@ -17,6 +17,10 @@ import { Lobby } from './screens/Lobby.js';
 import { Result } from './screens/Result.js';
 import { Disconnected } from './screens/Disconnected.js';
 import { ActionBar } from './game/ActionBar.js';
+import { ChatPanel } from './ChatPanel.js';
+import { RoomLayout } from './RoomLayout.js';
+import type { ChatLine } from './ChatPanel.js';
+import { InputLockContext } from './inputLock.js';
 import { BlackjackView } from './game/BlackjackView.js';
 import { OneCardView } from './game/OneCardView.js';
 import { YachtView } from './game/YachtView.js';
@@ -32,6 +36,21 @@ export interface AppProps {
 
 type Screen = 'nickname' | 'menu' | 'roomList' | 'lobby' | 'game' | 'result' | 'disconnected';
 type RoomStateMsg = Extract<ServerMsg, { type: 'state' }>;
+
+/** 화면에 남겨두는 채팅 줄 수 — 게임 이벤트 로그(5줄)와 따로 센다. */
+const CHAT_VISIBLE_LINES = 8;
+
+/**
+ * 지금 채팅을 보낼 수 있는지와 보낼 채널. 게임이 view.chat으로 규칙을 알려주면(마피아) 그걸 따르고,
+ * 그 밖의 경우(로비·결과, chat 필드가 없는 게임)는 언제나 전원 채널이다. 최종 판단은 서버가 한다 —
+ * 이건 안내와 입력 가능 여부 표시용일 뿐이다.
+ */
+function chatStatusOf(state: RoomStateMsg | null): { canSend: boolean; channel: ChatChannel | null } {
+  const chat = state?.phase === 'playing' ? (state.view?.chat as { canSend?: unknown; channel?: unknown } | undefined) : undefined;
+  if (chat === undefined || typeof chat.canSend !== 'boolean') return { canSend: true, channel: 'all' };
+  const channel = chat.channel === 'all' || chat.channel === 'mafia' || chat.channel === 'dead' ? chat.channel : null;
+  return { canSend: chat.canSend, channel };
+}
 
 /** 화면 플러그인 규약(브리프 §Interfaces) — Task 13~15가 각자의 View로 이 자리를 채운다. */
 const GAME_VIEWS: Record<GameId, (props: GameViewProps) => React.JSX.Element> = {
@@ -110,6 +129,8 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   const [you, setYou] = useState<string>('');
   const [roomState, setRoomState] = useState<RoomStateMsg | null>(null);
   const [eventLog, setEventLog] = useState<string[]>([]);
+  const [chatLog, setChatLog] = useState<ChatLine[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   // 중요사항 3: Connection.connect가 최대 5초 걸리는 동안(연결 성패가 갈리기 전) RoomList가
@@ -156,6 +177,9 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
       setScreen(msg.phase === 'playing' ? 'game' : msg.phase);
     } else if (msg.type === 'event') {
       setEventLog((prev) => [...prev, msg.text].slice(-5));
+    } else if (msg.type === 'chat') {
+      const line: ChatLine = { from: msg.from, text: msg.text, channel: msg.channel };
+      setChatLog((prev) => [...prev, line].slice(-CHAT_VISIBLE_LINES));
     }
     // 'joined'/'error'는 핸드셰이크 전용 메시지라 Connection이 onMessage로는 절대 넘기지
     // 않는다(connection.ts 참고) — 여기서 다룰 필요가 없다.
@@ -175,6 +199,8 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
         );
         setRoomState(null);
         setEventLog([]);
+        setChatLog([]);
+        setChatOpen(false);
         setScreen('disconnected');
       });
     },
@@ -312,6 +338,10 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     connectionRef.current?.send({ type: 'action', name, arg });
   }, []);
 
+  const sendChat = useCallback((text: string): void => {
+    connectionRef.current?.send({ type: 'chat', text });
+  }, []);
+
   const handleStart = useCallback((): void => sendAction('start'), [sendAction]);
   const handleReplay = useCallback((): void => sendAction('replay'), [sendAction]);
   const handleToLobby = useCallback((): void => sendAction('toLobby'), [sendAction]);
@@ -321,96 +351,122 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     setHostAddr(undefined);
     setRoomState(null);
     setEventLog([]);
+    setChatLog([]);
+    setChatOpen(false);
     setScreen('menu');
   }, [cleanupResources]);
 
+  const chatStatus = chatStatusOf(roomState);
+  // 밤이 되는 등 보낼 수 없게 바뀌면 입력창을 강제로 닫는다 — 열린 채로 두면 화면 키가 계속 잠긴다.
+  const chatActive = chatOpen && chatStatus.canSend;
+
   return (
-    <Box flexDirection="column">
-      {screen === 'nickname' && (
-        <Nickname
-          initialValue={nickname}
-          onSubmit={handleNicknameSubmit}
-          error={nicknameError}
-          onCancel={nickname ? () => setScreen('menu') : undefined}
-        />
-      )}
+    <InputLockContext.Provider value={chatActive}>
+      <Box flexDirection="column">
+        {screen === 'nickname' && (
+          <Nickname
+            initialValue={nickname}
+            onSubmit={handleNicknameSubmit}
+            error={nicknameError}
+            onCancel={nickname ? () => setScreen('menu') : undefined}
+          />
+        )}
 
-      {screen === 'menu' && (
-        <MainMenu
-          onCreateRoom={handleCreateRoom}
-          onJoinRoom={handleJoinRoom}
-          onChangeNickname={handleChangeNickname}
-          onQuit={handleQuit}
-          error={menuError}
-        />
-      )}
+        {screen === 'menu' && (
+          <MainMenu
+            onCreateRoom={handleCreateRoom}
+            onJoinRoom={handleJoinRoom}
+            onChangeNickname={handleChangeNickname}
+            onQuit={handleQuit}
+            error={menuError}
+          />
+        )}
 
-      {screen === 'roomList' && (
-        <RoomList
-          rooms={rooms}
-          scanning={scanning}
-          connecting={connecting}
-          error={roomListError}
-          onRefresh={refreshRooms}
-          onSelect={handleSelectRoom}
-          onManualConnect={handleManualConnect}
-          onCancel={returnToMenu}
-        />
-      )}
+        {screen === 'roomList' && (
+          <RoomList
+            rooms={rooms}
+            scanning={scanning}
+            connecting={connecting}
+            error={roomListError}
+            onRefresh={refreshRooms}
+            onSelect={handleSelectRoom}
+            onManualConnect={handleManualConnect}
+            onCancel={returnToMenu}
+          />
+        )}
 
-      {(screen === 'lobby' || screen === 'game' || screen === 'result') && roomState && (
-        <Box flexDirection="column">
-          <Box borderStyle="round" paddingX={1}>
-            <Text bold>
-              {roomState.room.name} [{GAME_LABELS[roomState.room.game]}]
-            </Text>
-          </Box>
-
-          {screen === 'lobby' && (
-            <Lobby
-              host={roomState.room.host}
-              players={roomState.room.players}
-              you={you}
-              hostAddr={you === roomState.room.host ? hostAddr : undefined}
-              game={roomState.room.game}
-              onStart={handleStart}
-              onLeave={returnToMenu}
-            />
-          )}
-
-          {screen === 'game' && roomState.view && (
-            <GameScreen
-              view={roomState.view}
-              you={you}
-              send={sendAction}
-              theme={initialTheme}
-              game={roomState.room.game}
-              deadline={roomState.deadline}
-            />
-          )}
-
-          {screen === 'result' && roomState.result && (
-            <Result
-              ranking={roomState.result.ranking}
-              game={roomState.room.game}
-              youAreHost={you === roomState.room.host}
-              onReplay={handleReplay}
-              onToLobby={handleToLobby}
-              onLeave={returnToMenu}
-            />
-          )}
-
-          <Box flexDirection="column" marginTop={1}>
-            {eventLog.map((text, i) => (
-              <Text key={i} dimColor>
-                {text}
+        {(screen === 'lobby' || screen === 'game' || screen === 'result') && roomState && (
+          <Box flexDirection="column">
+            <Box borderStyle="round" paddingX={1}>
+              <Text bold>
+                {roomState.room.name} [{GAME_LABELS[roomState.room.game]}]
               </Text>
-            ))}
-          </Box>
-        </Box>
-      )}
+            </Box>
 
-      {screen === 'disconnected' && <Disconnected message={disconnectMessage} onConfirm={returnToMenu} />}
-    </Box>
+            <RoomLayout
+              main={
+                <>
+                  {screen === 'lobby' && (
+                    <Lobby
+                      host={roomState.room.host}
+                      players={roomState.room.players}
+                      you={you}
+                      hostAddr={you === roomState.room.host ? hostAddr : undefined}
+                      game={roomState.room.game}
+                      onStart={handleStart}
+                      onLeave={returnToMenu}
+                    />
+                  )}
+
+                  {screen === 'game' && roomState.view && (
+                    <GameScreen
+                      view={roomState.view}
+                      you={you}
+                      send={sendAction}
+                      theme={initialTheme}
+                      game={roomState.room.game}
+                      deadline={roomState.deadline}
+                    />
+                  )}
+
+                  {screen === 'result' && roomState.result && (
+                    <Result
+                      ranking={roomState.result.ranking}
+                      game={roomState.room.game}
+                      youAreHost={you === roomState.room.host}
+                      onReplay={handleReplay}
+                      onToLobby={handleToLobby}
+                      onLeave={returnToMenu}
+                    />
+                  )}
+
+                  <Box flexDirection="column" marginTop={1}>
+                    {eventLog.map((text, i) => (
+                      <Text key={i} dimColor>
+                        {text}
+                      </Text>
+                    ))}
+                  </Box>
+                </>
+              }
+              chat={(layout) => (
+                <ChatPanel
+                  layout={layout}
+                  lines={chatLog}
+                  open={chatActive}
+                  canSend={chatStatus.canSend}
+                  channel={chatStatus.channel}
+                  onOpen={() => setChatOpen(true)}
+                  onClose={() => setChatOpen(false)}
+                  onSend={sendChat}
+                />
+              )}
+            />
+          </Box>
+        )}
+
+        {screen === 'disconnected' && <Disconnected message={disconnectMessage} onConfirm={returnToMenu} />}
+      </Box>
+    </InputLockContext.Provider>
   );
 }

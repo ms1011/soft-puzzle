@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameViewProps } from './types.js';
 
 interface MafiaPlayer {
@@ -28,7 +29,7 @@ export function MafiaView({ view, you, send, theme }: GameViewProps): React.JSX.
 
   useEffect(() => setCursor((i) => Math.min(i, Math.max(0, targets.length - 1))), [targets.length, canAct]);
 
-  useInput((_input, key) => {
+  useScreenInput((_input, key) => {
     if (!canAct || targets.length === 0) return;
     if (key.upArrow) setCursor((i) => (i - 1 + targets.length) % targets.length);
     else if (key.downArrow) setCursor((i) => (i + 1) % targets.length);

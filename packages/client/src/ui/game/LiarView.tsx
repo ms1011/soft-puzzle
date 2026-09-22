@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameViewProps } from './types.js';
 
 interface LiarViewState { yourActions: string[]; yourWord: string; players: string[]; hasVoted: boolean; }
@@ -10,7 +11,7 @@ export function LiarView({ view, you, send }: GameViewProps): React.JSX.Element 
   const [cursor, setCursor] = useState(0);
   const canVote = v.yourActions.includes('vote');
   useEffect(() => setCursor((current) => Math.min(current, Math.max(0, targets.length - 1))), [targets.length]);
-  useInput((_input, key) => {
+  useScreenInput((_input, key) => {
     if (!canVote) return;
     if (key.upArrow) setCursor((current) => (current - 1 + targets.length) % targets.length);
     else if (key.downArrow) setCursor((current) => (current + 1) % targets.length);

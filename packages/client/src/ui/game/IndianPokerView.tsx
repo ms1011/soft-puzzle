@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameViewProps } from './types.js';
 
 interface IndianView { yourActions: string[]; yourCard: string; isTurn: boolean; round: number; remainingCards: number; pot: number; scores: { nickname: string; score: number }[]; chips: { nickname: string; chips: number }[]; others: { nickname: string; card: string; folded: boolean; isTurn: boolean }[]; }
@@ -7,7 +8,7 @@ interface IndianView { yourActions: string[]; yourCard: string; isTurn: boolean;
 export function IndianPokerView({ view, send }: GameViewProps): React.JSX.Element {
   const v = view as unknown as IndianView;
   const canAct = v.yourActions.length > 0;
-  useInput((input, key) => { if (!canAct) return; if (key.return) send('call'); else if (input === 'f') send('fold'); });
+  useScreenInput((input, key) => { if (!canAct) return; if (key.return) send('call'); else if (input === 'f') send('fold'); });
   return <Box flexDirection="column" paddingX={1}>
     <Text bold>라운드 {v.round} · 팟 {v.pot}칩 · 남은 덱 {v.remainingCards}장</Text>
     <Text bold>내 카드: ?</Text><Text dimColor>내 카드는 볼 수 없고, 상대 카드만 보입니다.</Text>

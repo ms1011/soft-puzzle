@@ -1,6 +1,7 @@
 import {
   mulberry32,
   MAX_PLAYERS,
+  MAX_CHAT_LENGTH,
   TURN_TIMEOUT_MS,
   BlackjackEngine,
   YachtEngine,
@@ -176,9 +177,9 @@ export class Room {
     } else if (type === 'chat') {
       const text = (msg as { text?: unknown }).text;
       if (typeof text !== 'string') return;
-      const trimmed = text.trim();
+      const trimmed = text.trim().slice(0, MAX_CHAT_LENGTH);
       if (!trimmed) return;
-      this.broadcastEvents([{ text: `[${nick}] ${trimmed}` }]);
+      this.handleChat(nick, trimmed);
     }
     // 'join'이나 알 수 없는 type은 여기서 다루지 않는다(join은 별도 API) — 조용히 무시.
   }
@@ -319,6 +320,22 @@ export class Room {
     this.deadline = null;
     this.phase = 'lobby';
     this.broadcastState();
+  }
+
+  /**
+   * 수신자는 게임 진행 중에만 엔진이 정한다(마피아의 밤 비밀 채팅·탈락자 격리 등) — 로비·결과
+   * 화면이거나 chatRoute가 없는 엔진이면 방 전원이 받는다. 엔진이 돌려준 목록은 현재 방 참가자와
+   * 교집합을 취해, 이미 나간 사람에게는 보내지 않는다.
+   */
+  private handleChat(nickname: string, text: string): void {
+    const route = this.phase === 'playing' ? this.engine?.chatRoute?.(nickname) : undefined;
+    if (route && !route.ok) {
+      this.send(nickname, { type: 'event', text: route.reason });
+      return;
+    }
+    const channel = route?.channel ?? 'all';
+    const to = route ? this.players.filter((p) => route.to.includes(p)) : this.players;
+    for (const p of to) this.send(p, { type: 'chat', from: nickname, text, channel });
   }
 
   // ---- 브로드캐스트 ----

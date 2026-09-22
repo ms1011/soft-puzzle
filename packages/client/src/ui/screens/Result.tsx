@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameId } from '@soft-puzzle/core';
 
 export interface ResultProps {
@@ -26,7 +27,7 @@ export function Result({
   onLeave,
   onToLobby,
 }: ResultProps): React.JSX.Element {
-  useInput((input) => {
+  useScreenInput((input) => {
     if (input === 'q') onLeave();
     else if (youAreHost && input === 'r') onReplay();
     else if (youAreHost && input === 'l') onToLobby();

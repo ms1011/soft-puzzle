@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { YachtCategory } from '@soft-puzzle/core';
 import { renderDice } from '../../art/dice.js';
 import { displayWidth } from '../../art/width.js';
@@ -109,7 +110,7 @@ export function YachtView({ view, you, send, theme }: GameViewProps): React.JSX.
   const mySheet = v.players.find((p) => p.nickname === you)?.sheet ?? {};
   const unscored = CATEGORY_ORDER.filter((c) => !(c in mySheet));
 
-  useInput((input, key) => {
+  useScreenInput((input, key) => {
     if (!isYourTurn) return;
 
     if (selecting) {

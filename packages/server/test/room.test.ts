@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { Room } from '../src/room.js';
-import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS } from '@soft-puzzle/core';
+import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS, MAX_CHAT_LENGTH } from '@soft-puzzle/core';
 import type { ServerMsg, GameId, MafiaSettings } from '@soft-puzzle/core';
 
 type StateMsg = Extract<ServerMsg, { type: 'state' }>;
 type EventMsg = Extract<ServerMsg, { type: 'event' }>;
+type ChatMsg = Extract<ServerMsg, { type: 'chat' }>;
 
 function setup(opts?: { game?: GameId; host?: string; seed?: number; name?: string; mafiaSettings?: MafiaSettings }) {
   let t = 0;
@@ -34,6 +35,10 @@ function lastState(msgs: ServerMsg[] | undefined): StateMsg {
   const states = (msgs ?? []).filter((m): m is StateMsg => m.type === 'state');
   if (states.length === 0) throw new Error('no state messages received');
   return states[states.length - 1];
+}
+
+function chats(msgs: ServerMsg[] | undefined): ChatMsg[] {
+  return (msgs ?? []).filter((m): m is ChatMsg => m.type === 'chat');
 }
 
 function events(msgs: ServerMsg[] | undefined): EventMsg[] {
@@ -359,16 +364,26 @@ describe('Room — playing/turn timer', () => {
     expect(() => room.handleMessage('없는사람', { type: 'chat', text: 'hi' })).not.toThrow();
   });
 
-  it('chat은 "[닉네임] 텍스트" 형식의 event로 전원에게 브로드캐스트된다', () => {
+  it('로비 chat은 chat 메시지로 전원에게 브로드캐스트된다', () => {
     const { room, sent } = setup();
     room.join('철수');
     room.join('영희');
-    room.handleMessage('철수', { type: 'chat', text: 'ㄱㄱ' });
+    room.handleMessage('철수', { type: 'chat', text: '  ㄱㄱ  ' });
 
-    const ev = events(sent['영희']);
-    expect(ev[ev.length - 1].text).toBe('[철수] ㄱㄱ');
-    const evSelf = events(sent['철수']);
-    expect(evSelf[evSelf.length - 1].text).toBe('[철수] ㄱㄱ');
+    const expected = { type: 'chat', from: '철수', text: 'ㄱㄱ', channel: 'all' };
+    expect(chats(sent['영희'])).toEqual([expected]);
+    expect(chats(sent['철수'])).toEqual([expected]);
+  });
+
+  it('빈 chat은 무시하고, 너무 긴 chat은 MAX_CHAT_LENGTH로 자른다', () => {
+    const { room, sent } = setup();
+    room.join('철수');
+    room.handleMessage('철수', { type: 'chat', text: '   ' });
+    room.handleMessage('철수', { type: 'chat', text: 'ㅋ'.repeat(MAX_CHAT_LENGTH + 50) });
+
+    const got = chats(sent['철수']);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.text).toHaveLength(MAX_CHAT_LENGTH);
   });
 
   it('leave: playing 중 이탈(host 아님)하면 engine 이벤트와 새 state가 브로드캐스트되고 게임은 계속된다', () => {
@@ -605,4 +620,67 @@ describe('Room — 빈 방 복구(완전히 비었던 방이 좌초되지 않아
       expect(started.room.players).toEqual(['민수', '지영']);
     },
   );
+});
+
+describe('Room — 게임 중 chat 라우팅', () => {
+  /** 5인 마피아(마피아 1명, 특수직업 없음)를 시작하고 역할을 view에서 읽어온다. */
+  function startMafia() {
+    const ctx = setup({ game: 'mafia', mafiaSettings: { mafiaCount: 1, specialRoles: [] } });
+    const players = ['철수', '영희', '민수', '지수', '현우'];
+    for (const p of players) ctx.room.join(p);
+    ctx.room.handleMessage('철수', { type: 'action', name: 'start' });
+    const mafia = players.find((p) => (lastState(ctx.sent[p]).view as { yourRole?: string }).yourRole === 'mafia')!;
+    const citizens = players.filter((p) => p !== mafia);
+    return { ...ctx, players, mafia, citizens };
+  }
+
+  it('밤의 마피아 chat은 마피아에게만 mafia 채널로 전달된다', () => {
+    const { room, sent, mafia, citizens } = startMafia();
+    room.handleMessage(mafia, { type: 'chat', text: '누구 죽일까' });
+
+    expect(chats(sent[mafia])).toEqual([{ type: 'chat', from: mafia, text: '누구 죽일까', channel: 'mafia' }]);
+    for (const c of citizens) expect(chats(sent[c])).toEqual([]);
+  });
+
+  it('밤에 시민이 chat하면 본인에게만 거절 사유 event가 가고 아무에게도 전달되지 않는다', () => {
+    const { room, sent, players, citizens } = startMafia();
+    room.handleMessage(citizens[0]!, { type: 'chat', text: '살려줘' });
+
+    for (const p of players) expect(chats(sent[p])).toEqual([]);
+    expect(events(sent[citizens[0]!]).at(-1)?.text).toBe('밤에는 채팅할 수 없습니다.');
+    expect(events(sent[citizens[1]!]).some((e) => e.text === '밤에는 채팅할 수 없습니다.')).toBe(false);
+  });
+
+  it('탈락자의 chat은 생존자에게 전달되지 않는다', () => {
+    const { room, sent, mafia, citizens } = startMafia();
+    const dead = citizens[0]!;
+    room.handleMessage(mafia, { type: 'action', name: 'mafiaVote', arg: dead });
+    room.handleMessage(dead, { type: 'chat', text: '범인은 ' + mafia });
+
+    expect(chats(sent[dead])).toEqual([{ type: 'chat', from: dead, text: '범인은 ' + mafia, channel: 'dead' }]);
+    expect(chats(sent[mafia])).toEqual([]);
+    for (const c of citizens.slice(1)) expect(chats(sent[c])).toEqual([]);
+  });
+
+  it('chatRoute가 없는 엔진(라이어)은 게임 중에도 전원에게 전달된다', () => {
+    const { room, sent } = setup({ game: 'liar' });
+    for (const p of ['철수', '영희', '민수']) room.join(p);
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+    room.handleMessage('영희', { type: 'chat', text: '둥글어요' });
+
+    for (const p of ['철수', '영희', '민수']) {
+      expect(chats(sent[p])).toEqual([{ type: 'chat', from: '영희', text: '둥글어요', channel: 'all' }]);
+    }
+  });
+
+  it('게임이 끝난 결과 화면에서는 마피아 규칙 없이 전원에게 전달된다', () => {
+    const { room, sent, players, mafia, citizens } = startMafia();
+    // 낮 투표로 마피아를 탈락시켜 게임을 끝낸다.
+    room.handleMessage(mafia, { type: 'action', name: 'mafiaVote', arg: citizens[0]! });
+    for (const p of [mafia, ...citizens.slice(1)]) room.handleMessage(p, { type: 'action', name: 'vote', arg: p === mafia ? citizens[1]! : mafia });
+    expect(lastState(sent[mafia]).phase).toBe('result');
+
+    room.handleMessage(citizens[0]!, { type: 'chat', text: 'gg' });
+    for (const p of players) expect(chats(sent[p]).at(-1)).toEqual({ type: 'chat', from: citizens[0]!, text: 'gg', channel: 'all' });
+  });
 });

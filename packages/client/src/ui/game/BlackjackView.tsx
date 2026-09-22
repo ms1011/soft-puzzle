@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import { handValue } from '@soft-puzzle/core';
 import type { Card } from '@soft-puzzle/core';
 import { renderHand } from '../../art/cards.js';
@@ -101,7 +102,7 @@ export function BlackjackView({ view, you, send, theme }: GameViewProps): React.
   const maxBet = Math.floor(v.you.chips / BET_STEP) * BET_STEP;
   const clampedBet = Math.min(Math.max(betAmount, MIN_BET), maxBet);
 
-  useInput((input, key) => {
+  useScreenInput((input, key) => {
     if (canBet) {
       if (key.upArrow) {
         setBetAmount((a) => Math.min(maxBet, a + BET_STEP));

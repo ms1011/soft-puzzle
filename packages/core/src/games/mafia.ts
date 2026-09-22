@@ -1,5 +1,5 @@
-import type { GameEngine, EngineAction, EngineEvent } from '../engine.js';
-import type { GameId, GameView } from '../protocol.js';
+import type { GameEngine, EngineAction, EngineEvent, ChatRoute } from '../engine.js';
+import type { ChatChannel, GameId, GameView } from '../protocol.js';
 import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
 
@@ -173,7 +173,29 @@ export class MafiaEngine implements GameEngine {
       alive: this.players.map((nickname) => ({ nickname, alive: this.alive.has(nickname), role: this.alive.has(nickname) ? undefined : this.roles.get(nickname) })),
       hasActed: this.actions.has(player),
       investigationResult: this.investigationResults.get(player),
+      chat: this.chatStatus(player),
     };
+  }
+
+  /**
+   * 정석 규칙: 탈락자는 낮·밤 모두 탈락자끼리만, 밤에는 생존 마피아끼리만, 낮에는 생존자 전원이
+   * 대화한다. 탈락자의 말은 어떤 단계에서도 생존자에게 닿지 않는다 — 죽은 사람이 정체를 흘리는 걸 막는다.
+   */
+  chatRoute(sender: string): ChatRoute {
+    if (!this.alive.has(sender)) {
+      return { ok: true, channel: 'dead', to: this.players.filter((p) => !this.alive.has(p)) };
+    }
+    const alive = this.players.filter((p) => this.alive.has(p));
+    if (this.phase === 'day') return { ok: true, channel: 'all', to: alive };
+    if (this.roles.get(sender) === 'mafia') {
+      return { ok: true, channel: 'mafia', to: alive.filter((p) => this.roles.get(p) === 'mafia') };
+    }
+    return { ok: false, reason: '밤에는 채팅할 수 없습니다.' };
+  }
+
+  private chatStatus(player: string): { canSend: boolean; channel: ChatChannel | null } {
+    const route = this.chatRoute(player);
+    return route.ok ? { canSend: true, channel: route.channel } : { canSend: false, channel: null };
   }
 
   pendingPlayers(): string[] {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
+import { useScreenInput } from '../inputLock.js';
 import type { GameViewProps } from './types.js';
 
 interface Board { nickname: string; eliminated?: boolean; tiles: { value: number | null; revealed: boolean }[]; }
@@ -11,7 +12,7 @@ export function DavinciView({ view, you, send }: GameViewProps): React.JSX.Eleme
   const [cursor, setCursor] = useState(0); const [guess, setGuess] = useState(0);
   const canGuess = v.yourActions.includes('guess');
   useEffect(() => setCursor((current) => Math.min(current, Math.max(0, targets.length - 1))), [targets.length]);
-  useInput((_input, key) => {
+  useScreenInput((_input, key) => {
     if (!canGuess || targets.length === 0) return;
     if (key.upArrow) setCursor((current) => (current - 1 + targets.length) % targets.length);
     else if (key.downArrow) setCursor((current) => (current + 1) % targets.length);

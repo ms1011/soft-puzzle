@@ -1,5 +1,8 @@
 export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia' | 'davinci' | 'liar' | 'indianPoker';
 
+/** 채팅이 전달된 범위 — 'all'은 방(또는 생존자) 전원, 나머지는 게임이 정한 비밀 채널이다. */
+export type ChatChannel = 'all' | 'mafia' | 'dead';
+
 export type ClientMsg =
   | { type: 'join'; nickname: string }
   | { type: 'action'; name: string; arg?: unknown }
@@ -27,7 +30,8 @@ export type ServerMsg =
       view?: GameView;
       result?: { ranking: { nickname: string; detail: string }[] };
     }
-  | { type: 'event'; text: string };
+  | { type: 'event'; text: string }
+  | { type: 'chat'; from: string; text: string; channel: ChatChannel };
 
 export interface RoomInfo {
   room: string;
@@ -41,3 +45,5 @@ export const DEFAULT_TCP_PORT = 7420;
 export const DEFAULT_UDP_PORT = 7421;
 export const TURN_TIMEOUT_MS = 90_000;
 export const MAX_PLAYERS = 6;
+/** 서버가 trim 후 이 길이를 넘는 채팅을 잘라낸다. */
+export const MAX_CHAT_LENGTH = 200;

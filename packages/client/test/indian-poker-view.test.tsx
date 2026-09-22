@@ -85,6 +85,35 @@ describe('IndianPokerView', () => {
     unmount();
   });
 
+  it('직전 라운드의 카드·폴드·승자를 한 줄로 보여준다', () => {
+    const view = indianView({
+      lastRound: {
+        round: 2,
+        cards: [
+          { nickname: '철수', card: '7S', folded: false },
+          { nickname: '영희', card: 'KH', folded: false },
+          { nickname: '민수', card: '3D', folded: true },
+        ],
+        winners: ['영희'],
+      },
+    });
+    const { lastFrame, unmount } = render(<IndianPokerView {...baseProps({ view })} />);
+    const line = (lastFrame() ?? '').split('\n').find((l) => l.includes('지난 라운드'))!;
+    expect(line).toContain('지난 라운드 2');
+    expect(line).toContain('영희 K♥ 승');
+    expect(line).toContain('민수 3♦ 폴드');
+    unmount();
+  });
+
+  it('--ascii 테마에서 지난 라운드 줄도 ASCII·한글 외 문자가 새지 않는다', () => {
+    const view = indianView({ lastRound: { round: 1, cards: [{ nickname: '영희', card: 'KH', folded: false }], winners: ['영희'] } });
+    const { lastFrame, unmount } = render(<IndianPokerView {...baseProps({ view, theme: { unicode: false } })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('영희 KH 승');
+    expect(findNonAsciiNonHangul(frame)).toEqual([]);
+    unmount();
+  });
+
   it('--ascii 테마에서 ASCII·한글 외 문자가 새지 않는다', () => {
     const { lastFrame, unmount } = render(<IndianPokerView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

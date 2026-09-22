@@ -103,6 +103,12 @@ export function renderHand(cards: (Card | 'back')[], theme: Theme): string[] {
   return renderHandSegments(cards, theme).map((row) => row.map((seg) => seg.text).join(''));
 }
 
+/** 문장 안에 넣는 짧은 카드 표기('K♥', ascii는 'KH'). 조커는 'JB'/'JR' 그대로다. */
+export function cardLabel(card: Card, theme: Theme): string {
+  const suit = suitOf(card);
+  return suit === null ? displayRank(card) : `${displayRank(card)}${glyphsFor(theme).suits[suit]}`;
+}
+
 /** 카드 한 장이 한 줄에서 차지하는 조각. red는 그 조각을 빨간색으로 칠해야 하는지다. */
 export interface CardSegment {
   text: string;

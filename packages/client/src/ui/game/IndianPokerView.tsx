@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import type { Card } from '@soft-puzzle/core';
-import { renderHandSegments } from '../../art/cards.js';
+import { cardLabel, isRedCard, renderHandSegments } from '../../art/cards.js';
 import { truncateDisplay } from '../../art/width.js';
 import { CardRows } from './CardRows.js';
 import { sep, turnGlyph } from './glyphs.js';
@@ -18,6 +18,25 @@ interface IndianView {
   scores: { nickname: string; score: number }[];
   chips: { nickname: string; chips: number }[];
   others: { nickname: string; card: Card; folded: boolean; isTurn: boolean }[];
+  /** 직전 라운드 결과. 첫 라운드이거나 이 필드가 없던 옛 서버면 null/undefined다. */
+  lastRound?: { round: number; cards: { nickname: string; card: Card; folded: boolean }[]; winners: string[] } | null;
+}
+
+/** 직전 라운드 공개 결과 한 줄 — 결과 알림은 금방 흘러가 버리므로 다음 라운드 동안 남겨 둔다. */
+function LastRoundLine({ last, theme }: { last: NonNullable<IndianView['lastRound']>; theme: GameViewProps['theme'] }): React.JSX.Element {
+  return (
+    <Text dimColor wrap="truncate-end">
+      지난 라운드 {last.round}:{' '}
+      {last.cards.map((c, i) => (
+        <Text key={c.nickname}>
+          {i > 0 ? sep(theme) : ''}
+          {c.nickname} <Text color={isRedCard(c.card) ? 'red' : undefined}>{cardLabel(c.card, theme)}</Text>
+          {last.winners.includes(c.nickname) && <Text color="yellow"> 승</Text>}
+          {c.folded ? ' 폴드' : ''}
+        </Text>
+      ))}
+    </Text>
+  );
 }
 
 /** 좌석 한 칸 폭 — 6인이면 78칼럼으로 80칼럼 터미널에 한 줄로 들어간다. */
@@ -73,6 +92,7 @@ export function IndianPokerView({ view, you, send, theme }: GameViewProps): Reac
         {sep(theme)}팟 <Text color="yellow">{v.pot}칩</Text>
         {sep(theme)}남은 덱 {v.remainingCards}장
       </Text>
+      {v.lastRound != null && <LastRoundLine last={v.lastRound} theme={theme} />}
       <Box flexDirection="row" marginTop={1}>
         {/* 내 카드는 끝까지 뒷면이다 — 서버도 yourCard를 '?'로만 보낸다. */}
         <Seat label={`${you} (나)`} card="back" chips={chipsOf(you)} wins={winsOf(you)} isYou isTurn={v.isTurn} folded={false} theme={theme} />

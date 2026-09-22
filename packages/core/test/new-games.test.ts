@@ -45,6 +45,27 @@ describe('new party games', () => {
     expect((game.getViewFor('a') as { history: unknown[] }).history).toHaveLength(6);
   });
 
+  it('인디언 포커 view는 직전 라운드의 카드·폴드·승자를 남긴다', () => {
+    const game = new IndianPokerEngine();
+    game.start(['a', 'b', 'c'], 'a', mulberry32(1));
+    type LastRound = { round: number; cards: { nickname: string; card: string; folded: boolean }[]; winners: string[] } | null;
+    expect((game.getViewFor('a') as { lastRound: LastRound }).lastRound).toBeNull();
+    const cardsSeenByA = (game.getViewFor('a') as { others: { nickname: string; card: string }[] }).others;
+    const cardOfA = (game.getViewFor('b') as { others: { nickname: string; card: string }[] }).others.find((o) => o.nickname === 'a')!.card;
+    game.handleAction('a', { name: 'call' });
+    game.handleAction('b', { name: 'fold' });
+    game.handleAction('c', { name: 'call' });
+    const last = (game.getViewFor('b') as { lastRound: LastRound }).lastRound!;
+    expect(last.round).toBe(1);
+    expect(last.cards).toEqual([
+      { nickname: 'a', card: cardOfA, folded: false },
+      { nickname: 'b', card: cardsSeenByA.find((o) => o.nickname === 'b')!.card, folded: true },
+      { nickname: 'c', card: cardsSeenByA.find((o) => o.nickname === 'c')!.card, folded: false },
+    ]);
+    expect(last.winners.length).toBeGreaterThan(0);
+    expect(last.winners).not.toContain('b');
+  });
+
   it('다빈치 코드 view는 모두에게 현재 차례 플레이어를 알려준다', () => {
     const game = new DavinciEngine();
     game.start(['a', 'b'], 'a', mulberry32(1));

@@ -21,6 +21,8 @@ export class IndianPokerEngine implements GameEngine {
   private starter = 0;
   private round = 0;
   private finished = false;
+  /** 직전 라운드 결과. 결과 알림은 금방 흘러가 버리므로, 다음 라운드 동안 화면에 남겨 둔다. */
+  private lastRound: { round: number; cards: { nickname: string; card: Card; folded: boolean }[]; winners: string[] } | null = null;
 
   start(players: string[], _host: string, rng: Rng): void {
     this.players = [...players];
@@ -30,6 +32,7 @@ export class IndianPokerEngine implements GameEngine {
     this.starter = 0;
     this.round = 0;
     this.finished = false;
+    this.lastRound = null;
     this.dealRound();
   }
   setHost(_host: string): void {}
@@ -60,6 +63,7 @@ export class IndianPokerEngine implements GameEngine {
       pot: this.pot,
       others: this.players.filter((p) => p !== player).map((p) => ({ nickname: p, card: this.cards.get(p), folded: this.folded.has(p), isTurn: this.players[this.turn] === p })),
       isTurn: this.players[this.turn] === player,
+      lastRound: this.lastRound === null ? null : { ...this.lastRound, cards: this.lastRound.cards.map((c) => ({ ...c })), winners: [...this.lastRound.winners] },
     };
   }
   pendingPlayers(): string[] { return this.finished ? [] : [this.players[this.turn]!]; }
@@ -103,6 +107,11 @@ export class IndianPokerEngine implements GameEngine {
       this.scores.set(winner, (this.scores.get(winner) ?? 0) + 1);
       this.chips.set(winner, (this.chips.get(winner) ?? 0) + share + (remainder-- > 0 ? 1 : 0));
     }
+    this.lastRound = {
+      round: this.round,
+      cards: this.players.map((p) => ({ nickname: p, card: this.cards.get(p)!, folded: this.folded.has(p) })),
+      winners: [...winners],
+    };
     const reveal = this.players.map((p) => `${p} ${this.cards.get(p)}`).join(', ');
     const winnerText = winners.length === 1 ? `${winners[0]}님 승리` : `${winners.join('·')}님 공동 승리`;
     if (this.deck.length < this.players.length) {

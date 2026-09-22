@@ -72,8 +72,12 @@ describe('YutView', () => {
     const { lastFrame, unmount } = render(<YutView {...baseProps()} />);
     const frame = lastFrame() ?? '';
     expect(frame).toContain('◎');
-    expect(frame).toContain('╲');
-    expect(frame).toContain('╱');
+    // 대각선은 기울기를 따라 칸마다 찍은 점선이다(예전 ╲/╱ 한 글자보다 이어져 보인다).
+    expect((frame.match(/·/g) ?? []).length).toBeGreaterThan(20);
+    // 모서리 이름을 판 위·아래에 적는다.
+    const lines = frame.split('\n');
+    expect(lines[0]).toMatch(/뒷모\s+모/);
+    expect(lines[12]).toMatch(/찌모\s+참먹이/);
     expect(frame).toMatch(/ A\s*$/m); // 걸 칸(3)의 철수 말(오른쪽 변)
     expect(frame).toContain('B2'); // 방에 업힌 영희의 말 2개
     expect(frame).toContain('철수 (나)');
@@ -176,6 +180,35 @@ describe('YutView', () => {
     unmount();
   });
 
+  it('새로 던진 윷은 잠시 굴리다가(결과 숨김) 실제 결과에서 멈춘다', async () => {
+    const before = moveView({ lastThrow: { player: '철수', name: '개', steps: 2, sticks: [true, true, false, false], seq: 1 } });
+    const after = moveView({ lastThrow: { player: '철수', name: '모', steps: 5, sticks: [false, false, false, false], seq: 2 } });
+    const { lastFrame, rerender, unmount } = render(<YutView {...baseProps({ view: before })} />);
+    await tick();
+    expect(lastFrame()).toContain('철수: 개!'); // 처음 그릴 때는 굴리지 않는다
+    rerender(<YutView {...baseProps({ view: after })} />);
+    await tick();
+    expect(lastFrame()).toContain('던지는 중');
+    expect(lastFrame()).not.toContain('모!');
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(lastFrame()).toContain('철수: 모! (5칸)');
+    unmount();
+  });
+
+  it('윷을 굴리는 동안에는 이동 키를 받지 않는다', async () => {
+    const send = vi.fn();
+    const before = moveView({ lastThrow: { player: '철수', name: '개', steps: 2, sticks: [true, true, false, false], seq: 1 } });
+    const after = moveView({ lastThrow: { player: '철수', name: '걸', steps: 3, sticks: [true, true, true, false], seq: 2 } });
+    const { stdin, rerender, unmount } = render(<YutView {...baseProps({ view: before, send })} />);
+    await tick();
+    rerender(<YutView {...baseProps({ view: after, send })} />);
+    await tick();
+    stdin.write('\r');
+    await tick();
+    expect(send).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it('나온 윷에 칸 수를 붙인다', () => {
     const { lastFrame, unmount } = render(<YutView {...baseProps({ view: moveView() })} />);
     expect(lastFrame()).toContain('[걸 3] [개 2]');
@@ -208,12 +241,12 @@ describe('YutView', () => {
     ascii.unmount();
   });
 
-  it('선택한 이동이 지나가는 빈 칸을 판에 ·로 표시한다(도착 칸은 *)', () => {
-    // 걸로 말1(3번 칸) → 4, 5, 6. 지나가는 4·5는 ·, 도착 6은 *.
+  it('선택한 이동이 지나가는 빈 칸을 판에 •로 표시한다(도착 칸은 *)', () => {
+    // 걸로 말1(3번 칸) → 4, 5, 6. 지나가는 4·5는 •, 도착 6은 *.
     const view = moveView({ moves: [{ throwIndex: 0, piece: 0, to: 6, stack: 1, capture: 0, path: [4, 5, 6] }] });
     const { lastFrame, unmount } = render(<YutView {...baseProps({ view })} />);
-    const board = (lastFrame() ?? '').split('\n').slice(0, 11).join('\n');
-    expect(board.match(/·/g)).toHaveLength(2);
+    const board = (lastFrame() ?? '').split('\n').slice(1, 12).join('\n'); // 0번 줄은 모서리 이름
+    expect(board.match(/•/g)).toHaveLength(2);
     expect(board).toContain('*');
     unmount();
   });
@@ -231,7 +264,7 @@ describe('YutView', () => {
     const focus = { 영희: { throwIndex: 0, piece: 0, to: 27, path: [27] } };
     const { lastFrame, unmount } = render(<YutView {...baseProps({ view, focus })} />);
     const frame = lastFrame() ?? '';
-    expect(frame.split('\n').slice(0, 11).join('\n')).toContain('*');
+    expect(frame.split('\n').slice(1, 12).join('\n')).toContain('*');
     expect(frame).toContain('영희님이 [걸] 말1(2개) → * 칸 고민 중');
     unmount();
   });
@@ -269,8 +302,8 @@ describe('YutView', () => {
         80,
       );
       const lines = (lastFrame() ?? '').split('\n');
-      // 판 11줄 + 설명 1 + 빈 줄 + 범례 6(마지막 윷가락은 범례 오른쪽) + 빈 줄 + 윷 1 + 빈 줄 + 안내 3 = 25줄.
-      expect(lines.length).toBe(25);
+      // 모서리 이름 1 + 판 11줄 + 모서리 이름 1 + 빈 줄 + 범례 6(마지막 윷가락은 범례 오른쪽) + 빈 줄 + 윷 1 + 빈 줄 + 안내 3 = 26줄.
+      expect(lines.length).toBe(26);
       for (const l of lines) expect(l.length).toBeLessThanOrEqual(80);
       expect(lines.some((l) => l.includes('P5'))).toBe(true);
       unmount();

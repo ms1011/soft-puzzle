@@ -210,6 +210,26 @@ describe('LasVegasView', () => {
     unmount();
   });
 
+  it('새로 굴린 주사위는 잠시 굴리다가(미리보기·입력 멈춤) 결과에서 멈춘다', async () => {
+    const send = vi.fn();
+    const before = makeView({ yourActions: [], turnPlayer: '영희' });
+    const { lastFrame, stdin, rerender, unmount } = render(<LasVegasView {...baseProps({ view: before, send })} />);
+    await tick();
+    expect(lastFrame()).not.toContain('굴리는 중');
+    // 내 차례가 되어 새 주사위를 받았다.
+    rerender(<LasVegasView {...baseProps({ send })} />);
+    await tick();
+    expect(lastFrame()).toContain('굴리는 중');
+    expect(lastFrame()).not.toContain('걸면');
+    stdin.write('\r');
+    await tick();
+    expect(send).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(lastFrame()).not.toContain('굴리는 중');
+    expect(lastFrame()).toContain('5번에 3개 걸면');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII·한글만 쓴다', () => {
     const { lastFrame, unmount } = render(<LasVegasView {...baseProps({ theme: { unicode: false } })} />);
     expect(findNonAsciiNonHangul(lastFrame() ?? '')).toEqual([]);

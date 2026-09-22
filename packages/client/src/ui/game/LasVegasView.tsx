@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
 import { lasVegasPayout } from '@soft-puzzle/core';
 import { useFocusBroadcast } from '../focus.js';
+import { randomFace, useRollAnimation } from '../rollAnimation.js';
 import { renderDie } from '../../art/dice.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { sep, turnGlyph } from './glyphs.js';
@@ -140,8 +141,13 @@ export function LasVegasView({ view, you, send, theme, focus, sendFocus }: GameV
   }, [diceKey]);
   const face = selected !== undefined && faces.includes(selected) ? selected : bestFace(dice);
 
+  // 차례마다 새로 굴린 주사위는 잠깐 굴리다가 결과에서 멈춘다. 라운드·차례·남은 주사위 총수로 굴림을 구분한다.
+  const diceLeftTotal = v.players.reduce((n, p) => n + p.diceLeft, 0);
+  const { rolling } = useRollAnimation(`${v.round}:${v.turnPlayer}:${diceLeftTotal}`);
+
   useScreenInput((input, key) => {
-    if (!canPlace || faces.length === 0) return;
+    // 굴리는 동안에는 아직 보이지 않는 결과로 걸지 않게 입력을 받지 않는다.
+    if (!canPlace || rolling || faces.length === 0) return;
     const i = face === undefined ? 0 : faces.indexOf(face);
     if (key.leftArrow) {
       setSelected(faces[(i - 1 + faces.length) % faces.length]);
@@ -155,26 +161,27 @@ export function LasVegasView({ view, you, send, theme, focus, sendFocus }: GameV
     }
   });
 
-  useFocusBroadcast(sendFocus, canPlace && face !== undefined ? { face } : null, view);
+  useFocusBroadcast(sendFocus, canPlace && !rolling && face !== undefined ? { face } : null, view);
   // 차례인 다른 사람이 고민 중인 눈 — 내 차례의 선택과 같은 방식으로 카지노에 미리 반영해 보여준다.
   const theirFace = ((): number | undefined => {
-    if (canPlace || v.turnPlayer === null || v.turnPlayer === you) return undefined;
+    if (canPlace || rolling || v.turnPlayer === null || v.turnPlayer === you) return undefined;
     const f = (focus?.[v.turnPlayer] as { face?: unknown } | undefined)?.face;
     return typeof f === 'number' && faces.includes(f) ? f : undefined;
   })();
-  const highlight = canPlace ? face : theirFace;
+  const highlight = rolling ? undefined : canPlace ? face : theirFace;
   /** 지금 미리보기 중인 사람(나 또는 차례인 다른 사람). */
-  const placer = canPlace ? you : theirFace !== undefined ? v.turnPlayer! : undefined;
+  const placer = rolling ? undefined : canPlace ? you : theirFace !== undefined ? v.turnPlayer! : undefined;
   const previewColor = canPlace ? 'yellow' : 'magenta';
   const fitNick = (nick: string, cap: number): string => truncateDisplay(nick, cap);
 
   // 주사위 아트: 선택한 눈의 주사위는 이중선(ascii는 #) 테두리로 그린다. 8개면 79칼럼.
-  const dieArts = dice.map((d) => renderDie(d as 1 | 2 | 3 | 4 | 5 | 6, d === highlight, theme));
+  const shownDice = rolling ? dice.map(() => randomFace()) : dice;
+  const dieArts = shownDice.map((d) => renderDie(d as 1 | 2 | 3 | 4 | 5 | 6, d === highlight, theme));
   const diceLines: string[] = [];
   if (dieArts.length > 0) {
     for (let row = 0; row < 5; row++) diceLines.push(dieArts.map((a) => a[row]).join(' '));
     diceLines.push(
-      dice
+      shownDice
         .map((d) => {
           const label = d === highlight ? `[${d}]` : String(d);
           const pad = 9 - label.length;
@@ -332,7 +339,13 @@ export function LasVegasView({ view, you, send, theme, focus, sendFocus }: GameV
               {'  '}
             </Text>
           )}
-          {canPlace && previewText() !== undefined && (
+          {rolling && (
+            <Text bold>
+              주사위 굴리는 중{theme.unicode ? '…' : '...'}
+              {'  '}
+            </Text>
+          )}
+          {canPlace && !rolling && previewText() !== undefined && (
             <Text bold color="yellow">
               {previewText()}
               {'  '}

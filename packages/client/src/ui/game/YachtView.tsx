@@ -7,6 +7,7 @@ import { renderDice } from '../../art/dice.js';
 import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { cursorGlyph } from './glyphs.js';
 import { useFocusBroadcast } from '../focus.js';
+import { randomFace, useRollAnimation } from '../rollAnimation.js';
 import type { GameViewProps } from './types.js';
 
 /** 13칸의 고정 표시 순서와 브리프가 지정한 한글 라벨. core의 CATEGORY_LABELS(이벤트 로그용
@@ -112,8 +113,15 @@ export function YachtView({ view, you, send, theme, focus, sendFocus }: GameView
   const mySheet = v.players.find((p) => p.nickname === you)?.sheet ?? {};
   const unscored = CATEGORY_ORDER.filter((c) => !(c in mySheet));
 
+  // 새로 굴린 주사위는 잠깐 굴리다가 결과에서 멈춘다. 굴림은 턴마다(차례·기록한 칸 수) 그리고 리롤마다
+  // (남은 굴림) 바뀌므로 그 조합으로 "던지기 한 번"을 구분한다.
+  const filled = v.players.reduce((n, p) => n + Object.keys(p.sheet).length, 0);
+  const { rolling } = useRollAnimation(`${v.turnPlayer}:${v.rollsLeft}:${filled}`);
+  const shownDice = rolling ? v.dice.map((d, i) => (v.held[i] ? d : randomFace())) : v.dice;
+
   useScreenInput((input, key) => {
-    if (!isYourTurn) return;
+    // 굴리는 동안에는 아직 보이지 않는 결과로 행동하지 않게 입력을 받지 않는다.
+    if (!isYourTurn || rolling) return;
 
     if (selecting) {
       if (key.upArrow) {
@@ -191,7 +199,8 @@ export function YachtView({ view, you, send, theme, focus, sendFocus }: GameView
   // 주사위는 모두에게 공개된 "차례인 사람"의 것이므로, 그 사람의 빈 칸에만 지금 주사위로 받을
   // 점수를 미리 보여준다(누가 보든 같다). 기록된 점수와 헷갈리지 않게 괄호로 감싸고 흐리게 그린다
   // — 색이 없는 터미널에서도 괄호로 구분된다. 칸 최소 폭이 4라 최대 점수 (50)도 들어간다.
-  const diceReady = v.dice.length === 5 && v.dice.every((d) => d >= 1 && d <= 6);
+  // 굴리는 중에는 결과가 정해지기 전처럼 보여야 하므로 미리보기를 숨긴다.
+  const diceReady = !rolling && v.dice.length === 5 && v.dice.every((d) => d >= 1 && d <= 6);
 
   function scoreCell(p: YachtPlayerView, cat: YachtCategory): { text: string; preview: boolean } {
     const score = p.sheet[cat];
@@ -215,13 +224,13 @@ export function YachtView({ view, you, send, theme, focus, sendFocus }: GameView
          * 대각선으로 흩어지는 형태가 된다 — 한 줄로 유지하고 넘치는 부분만 자르는 편이
          * 훨씬 덜 깨져 보인다. */}
         <Box flexDirection="column" marginRight={2} flexShrink={1}>
-          {renderDice(v.dice, v.held, theme).map((line, i) => (
+          {renderDice(shownDice, v.held, theme).map((line, i) => (
             <Text key={i} wrap="truncate-end">
               {line}
             </Text>
           ))}
           <Text wrap="truncate-end">
-            남은 굴림: {rollPips(v.rollsLeft, theme)} {v.rollsLeft}회
+            {rolling ? `굴리는 중${theme.unicode ? '…' : '...'}` : `남은 굴림: ${rollPips(v.rollsLeft, theme)} ${v.rollsLeft}회`}
           </Text>
           {v.turnPlayer !== null && (
             <Text dimColor wrap="truncate-end">

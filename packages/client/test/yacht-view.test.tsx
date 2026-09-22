@@ -122,6 +122,35 @@ describe('YachtView', () => {
     unmount();
   });
 
+  it('다시 굴리면 잡지 않은 주사위를 잠시 굴리다가(미리보기 숨김) 결과에서 멈춘다', async () => {
+    const { lastFrame, rerender, unmount } = render(<YachtView {...baseProps()} />);
+    await tick();
+    expect(lastFrame()).not.toContain('굴리는 중'); // 처음 그릴 때는 굴리지 않는다
+    rerender(<YachtView {...baseProps({ view: turnView({ rollsLeft: 1, dice: [1, 6, 6, 6, 6] }) })} />);
+    await tick();
+    const rolling = lastFrame() ?? '';
+    expect(rolling).toContain('굴리는 중');
+    expect(rolling).not.toMatch(/\(\d+\)/); // 결과가 정해지기 전이라 점수 미리보기를 숨긴다
+    expect(rolling).toContain('[잡음]'); // 잡은 주사위는 그대로
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const settled = lastFrame() ?? '';
+    expect(settled).not.toContain('굴리는 중');
+    expect(settled).toMatch(/\(\d+\)/);
+    unmount();
+  });
+
+  it('굴리는 동안에는 키 입력을 받지 않는다', async () => {
+    const send = vi.fn();
+    const { stdin, rerender, unmount } = render(<YachtView {...baseProps({ send })} />);
+    await tick();
+    rerender(<YachtView {...baseProps({ send, view: turnView({ rollsLeft: 1 }) })} />);
+    await tick();
+    stdin.write('2');
+    await tick();
+    expect(send).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it("1 입력이 send('toggleHold', 0)을 호출한다", async () => {
     const send = vi.fn();
     const { stdin, unmount } = render(<YachtView {...baseProps({ send })} />);

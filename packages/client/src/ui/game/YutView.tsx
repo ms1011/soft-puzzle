@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Box, Text } from 'ink';
 import { useScreenInput } from '../inputLock.js';
-import { truncateDisplay } from '../../art/width.js';
+import { displayWidth, truncateDisplay } from '../../art/width.js';
 import { cursorGlyph, sep, turnGlyph } from './glyphs.js';
 import { useFocusBroadcast } from '../focus.js';
+import { useRollAnimation } from '../rollAnimation.js';
 import type { GameViewProps } from './types.js';
 
 interface YutPieceView {
@@ -37,7 +38,8 @@ interface YutGameView {
   throws: { name: string; steps: number }[];
   throwsLeft: number;
   players: YutPlayerView[];
-  lastThrow: { player: string; name: string; steps: number; sticks: boolean[] } | null;
+  /** seq는 던진 순번 — 같은 결과를 연달아 던져도 새 던지기로 알아본다(옛 서버에는 없다). */
+  lastThrow: { player: string; name: string; steps: number; sticks: boolean[]; seq?: number } | null;
   moves: YutMoveView[];
 }
 
@@ -91,6 +93,7 @@ export function renderSticks(sticks: boolean[], theme: GameViewProps['theme']): 
 interface Seg {
   text: string;
   color?: string;
+  bg?: string;
   bold?: boolean;
   inverse?: boolean;
 }
@@ -99,6 +102,8 @@ interface StationMark {
   label: string;
   color?: string;
   inverse?: boolean;
+  /** 말이 있는 칸은 플레이어 색을 배경으로 칠한 칩으로 그린다. */
+  bg?: string;
 }
 
 /** 말 4개를 완주·판·집 순서의 아이콘으로 — 누가 앞서는지 숫자를 읽지 않아도 보인다. */
@@ -113,12 +118,17 @@ function padCell(s: string): string {
   return s.length === 1 ? ` ${s} ` : s.padEnd(3).slice(0, 3);
 }
 
+/** 판 위·아래에 모서리 이름을 적는 한 줄 — 왼쪽 이름은 왼쪽 모서리 칸, 오른쪽 이름은 오른쪽 모서리 칸에 맞춘다. */
+function cornerLine(left: string, right: string): string {
+  const gap = Math.max(1, BOARD_COLS - 1 - displayWidth(left) - displayWidth(right));
+  return ` ${left}${' '.repeat(gap)}${right}`;
+}
+
 /** 판 아트를 줄마다 스타일 조각(Seg) 배열로 만든다. marks는 칸 번호 → 표시. */
 function renderBoard(marks: Map<number, StationMark>, theme: GameViewProps['theme']): Seg[][] {
   const h = theme.unicode ? '─' : '-';
   const vch = theme.unicode ? '│' : '|';
-  const back = theme.unicode ? '╲' : '\\';
-  const fwd = theme.unicode ? '╱' : '/';
+  const dot = theme.unicode ? '·' : '.';
   const grid: string[][] = Array.from({ length: BOARD_ROWS }, () => Array.from({ length: BOARD_COLS }, () => ' '));
   for (let x = 0; x < BOARD_COLS; x++) {
     grid[0]![x] = h;
@@ -127,9 +137,15 @@ function renderBoard(marks: Map<number, StationMark>, theme: GameViewProps['them
   for (let y = 1; y < BOARD_ROWS - 1; y++) {
     grid[y]![1] = vch;
     grid[y]![BOARD_COLS - 2] = vch;
-    // 두 대각선: 왼쪽 위(1,0) → 오른쪽 아래(51,10), 오른쪽 위 → 왼쪽 아래. 한 줄에 5칼럼씩 기운다.
-    grid[y]![1 + 5 * y] = back;
-    grid[y]![BOARD_COLS - 2 - 5 * y] = fwd;
+  }
+  // 두 대각선: 왼쪽 위(1,0) → 오른쪽 아래(51,10), 오른쪽 위 → 왼쪽 아래. 한 줄에 5칼럼씩 기울어 한
+  // 글자로는 선이 끊겨 보이므로, 기울기를 따라 두 칼럼마다 점을 찍어 이어진 점선으로 그린다.
+  for (let x = 2; x < BOARD_COLS - 2; x += 2) {
+    const y = Math.round((x - 1) / 5);
+    if (y > 0 && y < BOARD_ROWS - 1) {
+      grid[y]![x] = dot;
+      grid[y]![BOARD_COLS - 1 - x] = dot;
+    }
   }
   // 진행 방향: 참먹이(오른쪽 아래)에서 오른쪽 변을 따라 위로 올라간다.
   grid[BOARD_ROWS - 2]![BOARD_COLS - 2] = theme.unicode ? '↑' : '^';
@@ -152,7 +168,8 @@ function renderBoard(marks: Map<number, StationMark>, theme: GameViewProps['them
       const empty = BIG_STATIONS.has(s) ? (theme.unicode ? '◎' : '@') : theme.unicode ? '○' : 'o';
       segs.push({
         text: padCell(mark?.label ?? empty),
-        color: mark?.color,
+        color: mark?.bg !== undefined && !mark.inverse ? 'black' : mark?.color,
+        bg: mark?.inverse ? undefined : mark?.bg,
         bold: mark !== undefined,
         inverse: mark?.inverse,
       });
@@ -183,7 +200,13 @@ export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewPr
   const pSel = Math.min(pieceSel, Math.max(0, pieceOptions.length - 1));
   const selMove = pieceOptions[pSel];
 
+  // 새로 던진 윷은 잠깐 굴리다가 결과에서 멈춘다 — 순전히 화면 연출이다(rollAnimation.ts).
+  const rollKey = v.lastThrow === null ? null : String(v.lastThrow.seq ?? JSON.stringify(v.lastThrow));
+  const { rolling } = useRollAnimation(rollKey);
+
   useScreenInput((input, key) => {
+    // 굴리는 동안에는 아직 보이지 않는 결과로 말을 옮기지 않게 입력을 받지 않는다.
+    if (rolling) return;
     if (canThrow) {
       if (input === ' ') send('throw');
       return;
@@ -214,7 +237,7 @@ export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewPr
       if (pc.state === 'board' && pc.station !== undefined) counts.set(pc.station, (counts.get(pc.station) ?? 0) + 1);
     }
     for (const [s, n] of counts) {
-      marks.set(s, { label: n > 1 ? `${p.marker}${n}` : p.marker, color: MARKER_COLORS[p.marker] });
+      marks.set(s, { label: n > 1 ? `${p.marker}${n}` : p.marker, color: MARKER_COLORS[p.marker], bg: MARKER_COLORS[p.marker] });
     }
   }
   const me = v.players.find((p) => p.nickname === you);
@@ -240,7 +263,7 @@ export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewPr
     }
     // 지나가는 빈 칸에 경로 표시 — 모서리에서 지름길로 꺾는지가 윷놀이의 핵심 판단이다.
     for (const s of preview.path) {
-      if (s !== preview.to && !marks.has(s)) marks.set(s, { label: theme.unicode ? '·' : '+', color: preview.color });
+      if (s !== preview.to && !marks.has(s)) marks.set(s, { label: theme.unicode ? '•' : '+', color: preview.color });
     }
     if (preview.to !== 'done') {
       // 도착 칸에는 항상 *를 붙인다 — 잡는 칸(상대 말이 있는 칸)도 반전만으로는 색 없는 터미널에서 안 보인다.
@@ -277,20 +300,19 @@ export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewPr
 
   return (
     <Box flexDirection="column">
+      <Text dimColor>{cornerLine('뒷모', '모')}</Text>
       <Box flexDirection="column" flexShrink={0}>
         {board.map((row, y) => (
           <Text key={y}>
             {row.map((seg, i) => (
-              <Text key={i} color={seg.color} bold={seg.bold} inverse={seg.inverse}>
+              <Text key={i} color={seg.color} backgroundColor={seg.bg} bold={seg.bold} inverse={seg.inverse}>
                 {seg.text}
               </Text>
             ))}
           </Text>
         ))}
       </Box>
-      <Text dimColor wrap="truncate-end">
-        오른쪽 아래 {theme.unicode ? '◎' : '@'} = 참먹이(출발/도착)
-      </Text>
+      <Text dimColor>{cornerLine('찌모', '참먹이(출발)')}</Text>
 
       {/* 플레이어 목록 오른쪽 빈 공간에 마지막 윷가락을 둔다 — 아래에 쌓으면 화면이 4줄 길어져
        * 짧은 터미널에서 윷판이 위로 밀려난다. */}
@@ -318,13 +340,19 @@ export function YutView({ view, you, send, theme, focus, sendFocus }: GameViewPr
       </Box>
       {v.lastThrow && (
         <Box flexDirection="column" flexShrink={0} marginLeft={2}>
-          {renderSticks(v.lastThrow.sticks, theme).map((line, i) => (
+          {renderSticks(rolling ? v.lastThrow.sticks.map(() => Math.random() < 0.5) : v.lastThrow.sticks, theme).map((line, i) => (
             <Text key={i}>{line}</Text>
           ))}
-          <Text bold color={BONUS_THROWS.has(v.lastThrow.name) ? 'yellow' : undefined}>
-            {truncateDisplay(v.lastThrow.player, NICK_CAP)}: {v.lastThrow.name}! ({v.lastThrow.steps}칸)
-            {BONUS_THROWS.has(v.lastThrow.name) ? ' 한 번 더!' : ''}
-          </Text>
+          {rolling ? (
+            <Text dimColor>
+              {truncateDisplay(v.lastThrow.player, NICK_CAP)}: 던지는 중{theme.unicode ? '…' : '...'}
+            </Text>
+          ) : (
+            <Text bold color={BONUS_THROWS.has(v.lastThrow.name) ? 'yellow' : undefined}>
+              {truncateDisplay(v.lastThrow.player, NICK_CAP)}: {v.lastThrow.name}! ({v.lastThrow.steps}칸)
+              {BONUS_THROWS.has(v.lastThrow.name) ? ' 한 번 더!' : ''}
+            </Text>
+          )}
         </Box>
       )}
       </Box>

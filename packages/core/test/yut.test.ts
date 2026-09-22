@@ -128,6 +128,17 @@ describe('YutEngine', () => {
     expect(v.moves).toEqual([{ throwIndex: 0, piece: 0, to: 3, stack: 1, capture: 0, path: [1, 2, 3] }]);
   });
 
+  it('lastThrow.seq는 던질 때마다 1씩 늘어, 같은 결과를 연달아 던져도 구분된다', () => {
+    const e = new YutEngine();
+    e.start(['a', 'b'], 'a', scripted('윷', '윷'));
+    const seqOf = () => (view(e, 'a') as unknown as { lastThrow: { seq: number } | null }).lastThrow?.seq;
+    expect(seqOf()).toBeUndefined();
+    e.handleAction('a', { name: 'throw' });
+    const first = seqOf()!;
+    e.handleAction('a', { name: 'throw' }); // 윷 → 한 번 더
+    expect(seqOf()).toBe(first + 1);
+  });
+
   it('윷·모가 나오면 한 번 더 던지고, 결과가 쌓인다', () => {
     const e = new YutEngine();
     e.start(['a', 'b'], 'a', scripted('윷', '모', '개'));

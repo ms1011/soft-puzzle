@@ -202,7 +202,8 @@ export class YutEngine implements GameEngine {
   private turnIdx = 0;
   private credits = 0;
   private pending: { name: YutThrowName; steps: number }[] = [];
-  private lastThrow: { player: string; name: YutThrowName; steps: number; sticks: boolean[] } | null = null;
+  /** seq는 이번 게임에서 몇 번째 던지기인지 — 같은 사람이 같은 결과를 연달아 던져도 화면이 새 던지기로 알아본다. */
+  private lastThrow: { player: string; name: YutThrowName; steps: number; sticks: boolean[]; seq: number } | null = null;
   private finished = false;
   private winner: string | null = null;
 
@@ -249,7 +250,7 @@ export class YutEngine implements GameEngine {
     const t = throwSticks(this.rng);
     this.credits--;
     this.pending.push({ name: t.name, steps: t.steps });
-    this.lastThrow = { player, ...t };
+    this.lastThrow = { player, ...t, seq: (this.lastThrow?.seq ?? 0) + 1 };
     const events: EngineEvent[] = [{ text: `${player}님이 윷을 던져 [${t.name}]${iGa(t.name)} 나왔습니다.` }];
     if (t.name === '윷' || t.name === '모') {
       this.credits++;

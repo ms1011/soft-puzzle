@@ -67,6 +67,23 @@ const STATION_POS: ReadonlyArray<readonly [number, number]> = [
 const BOARD_ROWS = 11;
 const BOARD_COLS = 53;
 const BIG_STATIONS = new Set([0, 5, 10, 15, 22]);
+/** 이름이 있는 칸 — 도착 안내에 쓴다. 나머지 칸은 판의 * 표시로 가리킨다. */
+const STATION_NAMES: Record<number, string> = { 0: '참먹이', 5: '모', 10: '뒷모', 15: '찌모', 22: '방' };
+/** 이 결과가 나오면 한 번 더 던진다. */
+const BONUS_THROWS = new Set(['윷', '모']);
+
+/**
+ * 윷가락 4개를 3줄 아트로 그린다. 배(평평한 면)가 위면 빈 가락, 등(둥근 면)이 위면 채운 가락이다.
+ * 빽도 표시(x)는 0번 가락의 배에 그려져 있어, 0번 가락이 배를 보일 때만 보인다.
+ */
+export function renderSticks(sticks: boolean[], theme: GameViewProps['theme']): string[] {
+  const [tl, tr, bl, br, h, v] = theme.unicode ? ['╭', '╮', '╰', '╯', '─', '│'] : ['+', '+', '+', '+', '-', '|'];
+  const fill = theme.unicode ? '█' : '#';
+  const top = sticks.map(() => `${tl}${h}${tr}`).join(' ');
+  const mid = sticks.map((flat, i) => `${v}${flat ? (i === 0 ? 'x' : ' ') : fill}${v}`).join(' ');
+  const bottom = sticks.map(() => `${bl}${h}${br}`).join(' ');
+  return [top, mid, bottom];
+}
 
 interface Seg {
   text: string;
@@ -195,8 +212,9 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
     if (m) marks.set(selStation, { ...m, inverse: true });
   }
   if (selMove && selMove.to !== 'done') {
+    // 도착 칸에는 항상 *를 붙인다 — 잡는 칸(상대 말이 있는 칸)도 반전만으로는 색 없는 터미널에서 안 보인다.
     const existing = marks.get(selMove.to);
-    marks.set(selMove.to, existing ? { ...existing, inverse: true } : { label: '*', color: 'yellow', inverse: true });
+    marks.set(selMove.to, existing ? { ...existing, label: `*${existing.label}`, inverse: true } : { label: '*', color: 'yellow', inverse: true });
   }
   const board = renderBoard(marks, theme);
 
@@ -208,7 +226,8 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
 
   function destLabel(m: YutMoveView): string {
     if (m.to === 'done') return '나기(완주)';
-    return m.capture > 0 ? `* 칸, 잡기!` : '* 칸';
+    const name = STATION_NAMES[m.to] ?? '* 칸';
+    return m.capture > 0 ? `${name}, 잡기!` : name;
   }
 
   const arrow = theme.unicode ? '→' : '->';
@@ -232,7 +251,10 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
         오른쪽 아래 {theme.unicode ? '◎' : '@'} = 참먹이(출발/도착)
       </Text>
 
-      <Box flexDirection="column" marginTop={1}>
+      {/* 플레이어 목록 오른쪽 빈 공간에 마지막 윷가락을 둔다 — 아래에 쌓으면 화면이 4줄 길어져
+       * 짧은 터미널에서 윷판이 위로 밀려난다. */}
+      <Box flexDirection="row" marginTop={1}>
+      <Box flexDirection="column" flexGrow={1}>
         {v.players.map((p) => (
           <Text key={p.nickname} wrap="truncate-end" bold={p.isTurn}>
             <Text color={MARKER_COLORS[p.marker]} bold>
@@ -249,6 +271,18 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
           </Text>
         ))}
       </Box>
+      {v.lastThrow && (
+        <Box flexDirection="column" flexShrink={0} marginLeft={2}>
+          {renderSticks(v.lastThrow.sticks, theme).map((line, i) => (
+            <Text key={i}>{line}</Text>
+          ))}
+          <Text bold color={BONUS_THROWS.has(v.lastThrow.name) ? 'yellow' : undefined}>
+            {truncateDisplay(v.lastThrow.player, NICK_CAP)}: {v.lastThrow.name}! ({v.lastThrow.steps}칸)
+            {BONUS_THROWS.has(v.lastThrow.name) ? ' 한 번 더!' : ''}
+          </Text>
+        </Box>
+      )}
+      </Box>
 
       <Box flexDirection="column" marginTop={1}>
         <Text wrap="truncate-end">
@@ -259,17 +293,12 @@ export function YutView({ view, you, send, theme }: GameViewProps): React.JSX.El
             const unusable = canMove && !usableThrows.includes(i);
             return (
               <Text key={i} inverse={selected} bold={selected} dimColor={unusable}>
-                {i > 0 ? ' ' : ''}[{t.name}]
+                {i > 0 ? ' ' : ''}[{t.name} {t.steps}]
               </Text>
             );
           })}
           {v.throwsLeft > 0 && <Text dimColor>{`  (던질 기회 ${v.throwsLeft}번)`}</Text>}
         </Text>
-        {v.lastThrow && (
-          <Text dimColor wrap="truncate-end">
-            마지막: {truncateDisplay(v.lastThrow.player, NICK_CAP)} [{v.lastThrow.name}]
-          </Text>
-        )}
       </Box>
 
       <Box flexDirection="column" marginTop={1}>

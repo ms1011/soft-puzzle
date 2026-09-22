@@ -150,6 +150,48 @@ describe('YutView', () => {
     unmount();
   });
 
+  it('마지막 윷가락 4개를 배(평평한 면)·등으로 그리고 결과를 크게 알린다', () => {
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view: moveView() })} />);
+    const frame = lastFrame() ?? '';
+    // 배 2개(가락 0·1), 등 2개(가락 2·3): 배는 빈 가락, 등은 채운 가락. 빽도 표시(x)는 0번 가락의
+    // 배에 그려져 있어, 0번이 배를 보이면 결과가 빽도가 아니어도 보인다(실제 윷과 같다).
+    expect(frame).toContain('│x│ │ │ │█│ │█│');
+    expect(frame).toContain('철수: 개! (2칸)');
+    unmount();
+  });
+
+  it('빽도는 표시 가락에 x를 그린다', () => {
+    const view = moveView({ lastThrow: { player: '철수', name: '빽도', steps: -1, sticks: [true, false, false, false] } });
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('│x│ │█│ │█│ │█│');
+    expect(frame).toContain('빽도! (-1칸)');
+    unmount();
+  });
+
+  it('윷·모는 한 번 더 던진다고 알린다', () => {
+    const view = moveView({ lastThrow: { player: '철수', name: '모', steps: 5, sticks: [false, false, false, false] } });
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view })} />);
+    expect(lastFrame()).toContain('모! (5칸) 한 번 더!');
+    unmount();
+  });
+
+  it('나온 윷에 칸 수를 붙인다', () => {
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view: moveView() })} />);
+    expect(lastFrame()).toContain('[걸 3] [개 2]');
+    unmount();
+  });
+
+  it('도착 칸은 판에 *로 표시하고(잡는 칸도), 이름 있는 칸은 이름을 알려준다', () => {
+    // 기본 선택: 걸(0번 윷)로 말1(3번 칸) → 6번 칸. 잡는 수로 바꿔 영희 말이 있는 22(방)로 보낸다.
+    const view = moveView({ moves: [{ throwIndex: 0, piece: 0, to: 22, stack: 1, capture: 2 }] });
+    const { lastFrame, unmount } = render(<YutView {...baseProps({ view })} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('*B2'); // 잡히는 영희 말 칸에도 도착 표시가 붙는다
+    expect(frame).toContain('→ 방, 잡기!');
+    unmount();
+  });
+
   it('ascii 테마 출력은 ASCII와 한글만 쓴다', () => {
     for (const view of [throwView(), moveView()]) {
       const { lastFrame, unmount } = render(<YutView {...baseProps({ view, theme: { unicode: false } })} />);
@@ -174,8 +216,8 @@ describe('YutView', () => {
         80,
       );
       const lines = (lastFrame() ?? '').split('\n');
-      // 판 11줄 + 설명 1 + 빈 줄 + 범례 6 + 빈 줄 + 윷 2 + 빈 줄 + 안내 3 = 26줄.
-      expect(lines.length).toBe(26);
+      // 판 11줄 + 설명 1 + 빈 줄 + 범례 6(마지막 윷가락은 범례 오른쪽) + 빈 줄 + 윷 1 + 빈 줄 + 안내 3 = 25줄.
+      expect(lines.length).toBe(25);
       for (const l of lines) expect(l.length).toBeLessThanOrEqual(80);
       expect(lines.some((l) => l.includes('P5'))).toBe(true);
       unmount();

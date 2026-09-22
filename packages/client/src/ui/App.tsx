@@ -29,6 +29,8 @@ import { DavinciView } from './game/DavinciView.js';
 import { LiarView } from './game/LiarView.js';
 import { IndianPokerView } from './game/IndianPokerView.js';
 import { TurnTimer } from './game/TurnTimer.js';
+import { reduceFocus } from './focus.js';
+import type { FocusMap } from './focus.js';
 import type { GameViewProps } from './game/types.js';
 
 export interface AppProps {
@@ -90,12 +92,14 @@ function GameScreen({
   theme,
   game,
   deadline,
+  focus,
+  sendFocus,
 }: GameViewProps & { game: GameId; deadline?: number }): React.JSX.Element {
   const View = GAME_VIEWS[game];
   return (
     <Box flexDirection="column">
       {deadline !== undefined && <TurnTimer deadline={deadline} theme={theme} />}
-      <View view={view} you={you} send={send} theme={theme} />
+      <View view={view} you={you} send={send} theme={theme} focus={focus} sendFocus={sendFocus} />
       {/* 요구사항 4: 행동 바는 항상 지금 view.yourActions에서만 나온다 — 하드코딩된 목록이
        * 아니다. ACTION_LABELS는 세 엔진이 실제로 쓰는 액션 이름을 미리 채운 한국어 사전이고,
        * 거기 없는 액션(향후 새 액션 등)은 ActionBar 자체 계약대로 이름 그대로 폴백한다. */}
@@ -121,6 +125,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [chatLog, setChatLog] = useState<ChatLine[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
+  const [focusMap, setFocusMap] = useState<FocusMap>({});
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   // 중요사항 3: Connection.connect가 최대 5초 걸리는 동안(연결 성패가 갈리기 전) RoomList가
@@ -162,6 +167,8 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   }, [cleanupResources]);
 
   const handleServerMsg = useCallback((msg: ServerMsg): void => {
+    // 다른 참가자의 커서: focus는 저장하고, state가 오면 지운다(focus.ts의 reduceFocus).
+    setFocusMap((prev) => reduceFocus(prev, msg));
     if (msg.type === 'state') {
       setRoomState(msg);
       setScreen(msg.phase === 'playing' ? 'game' : msg.phase);
@@ -191,6 +198,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
         setEventLog([]);
         setChatLog([]);
         setChatOpen(false);
+        setFocusMap({});
         setScreen('disconnected');
       });
     },
@@ -332,6 +340,10 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     connectionRef.current?.send({ type: 'chat', text });
   }, []);
 
+  const sendFocus = useCallback((target: unknown): void => {
+    connectionRef.current?.send({ type: 'focus', target });
+  }, []);
+
   const handleStart = useCallback((): void => sendAction('start'), [sendAction]);
   const handleReplay = useCallback((): void => sendAction('replay'), [sendAction]);
   const handleToLobby = useCallback((): void => sendAction('toLobby'), [sendAction]);
@@ -343,6 +355,7 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
     setEventLog([]);
     setChatLog([]);
     setChatOpen(false);
+    setFocusMap({});
     setScreen('menu');
   }, [cleanupResources]);
 
@@ -416,6 +429,8 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
                       theme={initialTheme}
                       game={roomState.room.game}
                       deadline={roomState.deadline}
+                      focus={focusMap}
+                      sendFocus={sendFocus}
                     />
                   )}
 

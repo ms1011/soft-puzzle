@@ -12,7 +12,7 @@ import { ActionBar } from '../src/ui/game/ActionBar.js';
 /** ink는 keypress를 batchedUpdates 안에서 동기적으로 처리하지만, 여러 stdin.write를
  * 연달아 보낼 때 렌더 반영 순서를 확실히 하기 위해 매크로태스크 하나만큼 양보한다. */
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 const ESC = '\x1B';

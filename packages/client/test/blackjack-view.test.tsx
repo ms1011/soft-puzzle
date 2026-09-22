@@ -8,7 +8,7 @@ import { findNonAsciiNonHangul } from './testUtils.js';
 /** ink는 keypress를 마운트 이후 useEffect로 등록한 리스너로 처리한다 — 첫 입력 전에 한 틱
  * 양보해야 유실되지 않는다(다른 화면 테스트들과 동일한 패턴). */
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 const ESC = String.fromCharCode(27);

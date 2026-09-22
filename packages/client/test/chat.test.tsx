@@ -7,7 +7,7 @@ import type { ChatLine } from '../src/ui/ChatPanel.js';
 import { InputLockContext, useScreenInput } from '../src/ui/inputLock.js';
 
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 const TAB = '\t';

@@ -10,7 +10,7 @@ const ESC = '';
 const RIGHT_ARROW = `${ESC}[C`;
 
 function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+  return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 function playingView(overrides: Record<string, unknown> = {}) {

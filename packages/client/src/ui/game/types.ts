@@ -11,4 +11,8 @@ export interface GameViewProps {
   you: string;
   send: (name: string, arg?: unknown) => void;
   theme: Theme;
+  /** 다른 참가자의 확정 전 커서(닉네임 → 게임별 target). 없으면 커서 공유를 표시하지 않는다. */
+  focus?: Record<string, unknown>;
+  /** 내 확정 전 커서를 서버로 보낸다. 뷰는 useFocusBroadcast로만 쓴다. */
+  sendFocus?: (target: unknown) => void;
 }

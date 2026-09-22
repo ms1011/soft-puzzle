@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { Room } from '../src/room.js';
 import { mulberry32, TURN_TIMEOUT_MS, MAX_PLAYERS } from '@soft-puzzle/core';
-import type { ServerMsg, GameId } from '@soft-puzzle/core';
+import type { ServerMsg, GameId, MafiaSettings } from '@soft-puzzle/core';
 
 type StateMsg = Extract<ServerMsg, { type: 'state' }>;
 type EventMsg = Extract<ServerMsg, { type: 'event' }>;
 
-function setup(opts?: { game?: GameId; host?: string; seed?: number; name?: string }) {
+function setup(opts?: { game?: GameId; host?: string; seed?: number; name?: string; mafiaSettings?: MafiaSettings }) {
   let t = 0;
   const room = new Room({
     name: opts?.name ?? '철수의 방',
@@ -14,6 +14,7 @@ function setup(opts?: { game?: GameId; host?: string; seed?: number; name?: stri
     host: opts?.host ?? '철수',
     rng: mulberry32(opts?.seed ?? 7),
     now: () => t,
+    mafiaSettings: opts?.mafiaSettings,
   });
   const sent: Record<string, ServerMsg[]> = {};
   room.onSend((nick, msg) => {
@@ -49,6 +50,19 @@ function advanceToSettle(room: Room, players: string[], bets: number[]) {
 }
 
 describe('Room — lobby', () => {
+  it('마피아 수가 현재 참가자의 절반 이상이면 방장이 시작할 수 없다', () => {
+    const { room, sent } = setup({ game: 'mafia', mafiaSettings: { mafiaCount: 2, specialRoles: [] } });
+    expect(room.join('철수')).toEqual({ ok: true });
+    expect(room.join('영희')).toEqual({ ok: true });
+    expect(room.join('민수')).toEqual({ ok: true });
+    expect(room.join('지수')).toEqual({ ok: true });
+
+    room.handleMessage('철수', { type: 'action', name: 'start' });
+
+    expect(lastState(sent['철수']).phase).toBe('lobby');
+    expect(events(sent['철수']).at(-1)?.text).toContain('절반 미만');
+  });
+
   it('① join 후 전원이 lobby state를 받는다', () => {
     const { room, sent } = setup();
     expect(room.join('철수')).toEqual({ ok: true });
@@ -249,6 +263,8 @@ describe('Room — playing/turn timer', () => {
     room.join('영희');
     room.handleMessage('철수', { type: 'action', name: 'start' });
 
+    expect(lastState(sent['철수']).deadline).toBe(TURN_TIMEOUT_MS);
+
     tick(TURN_TIMEOUT_MS + 1);
 
     const evs = events(sent['철수']).map((e) => e.text);
@@ -256,6 +272,7 @@ describe('Room — playing/turn timer', () => {
     // betting 단계에서 자동 최소 베팅이 적용되었어야 한다
     const view = lastState(sent['철수']).view as any;
     expect(view.you.bet).toBeGreaterThan(0);
+    expect(lastState(sent['철수']).deadline).toBe(TURN_TIMEOUT_MS * 2 + 1);
   });
 
   it('checkTimeout은 데드라인 전에는 아무 것도 하지 않는다', () => {

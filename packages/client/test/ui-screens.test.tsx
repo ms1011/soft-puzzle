@@ -89,7 +89,7 @@ describe('메인 메뉴', () => {
 describe('Lobby 화면', () => {
   it('참가자 목록을 그리고, 호스트에게만 ★ 표시를 붙인다', () => {
     const { lastFrame, unmount } = render(
-      <Lobby host="철수" players={['철수', '영희']} you="영희" onStart={() => {}} />,
+      <Lobby host="철수" players={['철수', '영희']} you="영희" onStart={() => {}} onLeave={() => {}} />,
     );
     const frame = lastFrame() ?? '';
     const lines = frame.split('\n');
@@ -109,11 +109,23 @@ describe('Lobby 화면', () => {
 
   it('빈 참가자 목록이면(버그가 있다면) 이 테스트가 실패한다', () => {
     const { lastFrame, unmount } = render(
-      <Lobby host="철수" players={[]} you="철수" onStart={() => {}} />,
+      <Lobby host="철수" players={[]} you="철수" onStart={() => {}} onLeave={() => {}} />,
     );
     // players가 비었으면 아무 이름도 렌더되지 않는다 — 위 테스트가 참가자 렌더 자체가 깨진
     // 회귀(예: players prop을 아예 안 쓰는 실수)를 잡아내는지 대조하기 위한 음성 대조군.
     expect(lastFrame() ?? '').not.toContain('철수');
+    unmount();
+  });
+
+  it('방장은 q를 눌러 방을 닫고 나갈 수 있다', async () => {
+    const onLeave = vi.fn();
+    const { stdin, unmount } = render(
+      <Lobby host="철수" players={['철수']} you="철수" onStart={() => {}} onLeave={onLeave} />,
+    );
+    await tick();
+    stdin.write('q');
+    await tick();
+    expect(onLeave).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
@@ -234,6 +246,26 @@ describe('Result 화면', () => {
     stdin.write('l');
     await tick();
     expect(onToLobby).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('방장이 아닌 참가자도 [q]로 결과 화면에서 나갈 수 있다', async () => {
+    const onLeave = vi.fn();
+    const { stdin, lastFrame, unmount } = render(
+      <Result
+        ranking={[{ nickname: '철수', detail: '시민 · 승리' }]}
+        game="liar"
+        youAreHost={false}
+        onReplay={() => {}}
+        onLeave={onLeave}
+        onToLobby={() => {}}
+      />,
+    );
+    expect(lastFrame() ?? '').not.toContain('1위');
+    await tick();
+    stdin.write('q');
+    await tick();
+    expect(onLeave).toHaveBeenCalledTimes(1);
     unmount();
   });
 });

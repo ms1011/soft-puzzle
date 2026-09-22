@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { OneCardView, renderLiftedHand } from '../src/ui/game/OneCardView.js';
 import type { GameViewProps } from '../src/ui/game/types.js';
-import { renderHand } from '../src/art/cards.js';
 import { findNonAsciiNonHangul } from './testUtils.js';
 
 const ESC = '';
@@ -133,28 +132,16 @@ describe('OneCardView', () => {
     }).not.toThrow();
   });
 
-  it('상대는 닉네임과 장수만 보여주고, 카드는 실제 내용이 아니라 뒷면 겹침 아트로만 그린다', () => {
-    // 리뷰 지적: 예전 테스트는 이름과 나왔다는 것만 확인했지 "내용을 보여주지 않는다"는
-    // 실제로 검증하지 않았다(부정 단언 없음 + 픽스처에 새어나갈 상대 카드 자체가 없었다).
-    // 지금은 opponents가 실제로 renderHand(Array(n).fill('back'))로 그려지므로, 그 블록이
-    // 정확히 그 결과와 일치하는지 확인한다 — 뒷면이 아닌 다른 무엇(예: 무늬 기호)이
-    // 섞이면 이 비교가 깨진다.
+  it('상대는 작은 터미널에서도 한 줄에 닉네임과 장수만 압축해 보여준다', () => {
     const { lastFrame, unmount } = render(<OneCardView {...baseProps()} />);
     const frame = lastFrame() ?? '';
     const lines = frame.split('\n');
     expect(frame).toContain('영희');
     expect(frame).toContain('5장');
 
-    const nickLineIdx = lines.findIndex((l) => l.includes('영희'));
-    expect(nickLineIdx).toBeGreaterThanOrEqual(0);
-    const expectedBack = renderHand(Array(5).fill('back' as const), { unicode: true });
-    const actualBlock = lines.slice(nickLineIdx + 1, nickLineIdx + 1 + expectedBack.length);
-    expect(actualBlock).toEqual(expectedBack);
-
-    // 그 블록 안에는 무늬 기호(카드 내용이 새어나갔다는 뜻)가 전혀 없어야 한다.
-    for (const line of actualBlock) {
-      expect(line).not.toMatch(/[♠♥♦♣]/);
-    }
+    const opponentLines = lines.filter((line) => line.includes('영희'));
+    expect(opponentLines).toHaveLength(1);
+    expect(opponentLines[0]).toContain('영희 5장');
     unmount();
   });
 

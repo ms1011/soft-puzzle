@@ -4,14 +4,13 @@ import type { AddressInfo } from 'node:net';
 import { startDiscovery } from '@soft-puzzle/server';
 import type { RunningDiscovery } from '@soft-puzzle/server';
 import { DISCOVERY_PROBE } from '@soft-puzzle/core';
-import type { RoomInfo } from '@soft-puzzle/core';
+import type { GameId, RoomInfo } from '@soft-puzzle/core';
 import { discoverRooms } from '../src/net/discover.js';
 
 function makeInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
   return { room: '테스트 방', game: 'blackjack', players: '1/6', addr: '', ...overrides };
 }
 
-/** 아직 아무도 안 쓰는 포트 번호를 하나 얻어낸다(약간의 경합은 있으나 테스트에서는 충분). */
 async function allocatePort(): Promise<number> {
   const probe = dgram.createSocket('udp4');
   return new Promise((resolve, reject) => {
@@ -154,8 +153,10 @@ describe('startDiscovery (responder)', () => {
       '묶인 두 소켓 모두에 팬아웃하는 것 자체는 실LAN 전용이라 여기서 재현하지 않는다, ' +
       'task-9-report.md 참고)',
     async () => {
-      const port = await allocatePort();
-      const a = await startDiscovery(() => makeInfo({ room: '방A' }), port);
+      // 먼저 포트 0으로 OS가 고른 포트에 A를 실제로 유지한 뒤 B를 같은 포트에 붙인다.
+      // Windows는 임시 probe 소켓을 닫은 직후 같은 포트를 다시 열 때 EACCES를 낼 수 있다.
+      const a = await startDiscovery(() => makeInfo({ room: '방A' }), 0);
+      const port = a.port;
       const b = await startDiscovery(() => makeInfo({ room: '방B' }), port);
       expect(a.port).toBe(port);
       expect(b.port).toBe(port);
@@ -167,6 +168,10 @@ describe('startDiscovery (responder)', () => {
         if (first.room === '방A') a.close();
         else b.close();
         const remaining = first.room === '방A' ? b : a;
+
+        // dgram.close()는 비동기로 핸들을 반환한다. 닫히는 중인 소켓이 다음 유니캐스트를
+        // 받아 버리지 않도록 close 콜백이 처리될 시간을 한 틱 준다.
+        await new Promise((resolve) => setTimeout(resolve, 20));
 
         const second = await probeDirect(port);
         expect(second.room).toBe(first.room === '방A' ? '방B' : '방A');
@@ -197,6 +202,42 @@ describe('discoverRooms (scanner)', () => {
     expect(rooms).toHaveLength(1);
     expect(rooms[0].room).toBe('가짜 방');
     expect(rooms[0].addr).toBe('127.0.0.1');
+  });
+
+  it('응답 정보 생성기에 프로브 발신자 주소를 전달한다', async () => {
+    let remoteAddress = '';
+    const responder = await startDiscovery((remote) => {
+      remoteAddress = remote;
+      return makeInfo({ room: '대역별 주소 방' });
+    }, 0);
+    try {
+      await probeDirect(responder.port);
+      expect(remoteAddress).toBe('127.0.0.1');
+    } finally {
+      responder.close();
+    }
+  });
+
+  it('마피아 방도 찾는다', async () => {
+    const fake = await bindLoopbackFakeResponder(() =>
+      JSON.stringify(makeInfo({ room: '마피아 방', game: 'mafia', addr: '127.0.0.1' })),
+    );
+    fakes.push(fake);
+
+    const rooms = await discoverRooms({ port: fake.port, timeoutMs: 1200 });
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].game).toBe('mafia');
+  });
+
+  it.each(['davinci', 'liar', 'indianPoker'] as GameId[])('%s 방도 찾는다', async (game) => {
+    const fake = await bindLoopbackFakeResponder(() =>
+      JSON.stringify(makeInfo({ room: `${game} 방`, game, addr: '127.0.0.1' })),
+    );
+    fakes.push(fake);
+
+    const rooms = await discoverRooms({ port: fake.port, timeoutMs: 1200 });
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].game).toBe(game);
   });
 
   it('응답기가 없으면 reject하지 않고 빈 배열로 끝난다', async () => {

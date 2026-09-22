@@ -6,9 +6,22 @@ export const GAME_LABELS: Record<GameId, string> = {
   onecard: '원카드',
   yacht: '야추',
   mafia: '마피아',
+  davinci: '다빈치 코드',
+  liar: '라이어 게임',
+  indianPoker: '인디언 포커',
 };
 
-export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia'];
+export const GAME_IDS: readonly GameId[] = ['blackjack', 'onecard', 'yacht', 'mafia', 'davinci', 'liar', 'indianPoker'];
+
+export const GAME_INFO: Record<GameId, { minPlayers: number; summary: string; duration: string }> = {
+  blackjack: { minPlayers: 2, summary: '21에 가깝게 카드를 모아 칩을 겨룹니다.', duration: '10~20분' },
+  onecard: { minPlayers: 2, summary: '같은 숫자나 무늬를 내 손패를 먼저 비웁니다.', duration: '10~20분' },
+  yacht: { minPlayers: 2, summary: '주사위 조합을 골라 가장 높은 점수를 만듭니다.', duration: '15~25분' },
+  mafia: { minPlayers: 4, summary: '밤의 마피아를 찾아 투표로 탈락시킵니다.', duration: '10~20분' },
+  davinci: { minPlayers: 2, summary: '숨겨진 숫자 타일을 추리해 최후까지 생존합니다.', duration: '10~15분' },
+  liar: { minPlayers: 3, summary: '제시어를 모르는 라이어를 대화로 찾아냅니다.', duration: '5~10분' },
+  indianPoker: { minPlayers: 2, summary: '상대 카드만 보고 콜 또는 폴드해 칩을 겨룹니다.', duration: '10~20분' },
+};
 
 /**
  * 게임 액션 이름 → 한국어 표시 라벨. 세 엔진이 실제로 내보내는 action name과 로비/결과의
@@ -35,6 +48,13 @@ export const ACTION_LABELS: Record<string, string> = {
   play: '내기',
   draw: '뽑기',
   vote: '투표',
+  mafiaVote: '처치 대상 선택',
+  protect: '보호 대상 선택',
+  investigateMafia: '마피아 조사',
+  investigateRole: '직업 조사',
+  guess: '추리',
+  call: '콜',
+  fold: '폴드',
 };
 
 /**
@@ -64,4 +84,11 @@ export const ACTION_KEYS: Record<string, string> = {
   play: 'Enter',
   draw: 'd',
   vote: 'Enter',
+  mafiaVote: 'Enter',
+  protect: 'Enter',
+  investigateMafia: 'Enter',
+  investigateRole: 'Enter',
+  guess: 'Enter',
+  call: 'Enter',
+  fold: 'f',
 };

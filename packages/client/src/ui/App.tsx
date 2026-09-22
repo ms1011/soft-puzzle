@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import os from 'node:os';
-import type { GameId, ServerMsg, RoomInfo } from '@soft-puzzle/core';
-import { Room, startServer, startDiscovery } from '@soft-puzzle/server';
+import type { GameId, ServerMsg, RoomInfo, MafiaSettings } from '@soft-puzzle/core';
+import { Room, resolveRespondAddr, startServer, startDiscovery } from '@soft-puzzle/server';
 import type { RunningServer, RunningDiscovery } from '@soft-puzzle/server';
 import { Connection, JoinError } from '../net/connection.js';
 import { discoverRooms } from '../net/discover.js';
@@ -21,6 +21,9 @@ import { BlackjackView } from './game/BlackjackView.js';
 import { OneCardView } from './game/OneCardView.js';
 import { YachtView } from './game/YachtView.js';
 import { MafiaView } from './game/MafiaView.js';
+import { DavinciView } from './game/DavinciView.js';
+import { LiarView } from './game/LiarView.js';
+import { IndianPokerView } from './game/IndianPokerView.js';
 import type { GameViewProps } from './game/types.js';
 
 export interface AppProps {
@@ -36,6 +39,9 @@ const GAME_VIEWS: Record<GameId, (props: GameViewProps) => React.JSX.Element> = 
   onecard: OneCardView,
   yacht: YachtView,
   mafia: MafiaView,
+  davinci: DavinciView,
+  liar: LiarView,
+  indianPoker: IndianPokerView,
 };
 
 /**
@@ -50,15 +56,11 @@ function loadSavedNickname(): string {
   return loadConfig().nickname?.normalize('NFC').trim() ?? '';
 }
 
-/** os.networkInterfaces()에서 첫 비내부(non-internal) IPv4 주소. 127.0.0.1은 호스트 본인만
- * 쓸 수 있어 "남에게 불러줄 주소"로는 의미가 없다 — 그래서 걸러낸다. */
-function firstNonInternalIPv4(): string | undefined {
-  for (const addrs of Object.values(os.networkInterfaces())) {
-    for (const iface of addrs ?? []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-    }
-  }
-  return undefined;
+/** 수동 접속용으로 모든 비내부 IPv4 주소를 보여준다(WSL/VPN 주소가 앞에 와도 LAN 주소를 숨기지 않는다). */
+function localIPv4Addresses(): string[] {
+  return [...new Set(Object.values(os.networkInterfaces()).flatMap((addrs) =>
+    (addrs ?? []).filter((iface) => iface.family === 'IPv4' && !iface.internal).map((iface) => iface.address),
+  ))];
 }
 
 function GameScreen({
@@ -67,10 +69,12 @@ function GameScreen({
   send,
   theme,
   game,
-}: GameViewProps & { game: GameId }): React.JSX.Element {
+  deadline,
+}: GameViewProps & { game: GameId; deadline?: number }): React.JSX.Element {
   const View = GAME_VIEWS[game];
   return (
     <Box flexDirection="column">
+      {deadline !== undefined && <TurnTimer deadline={deadline} />}
       <View view={view} you={you} send={send} theme={theme} />
       {/* 요구사항 4: 행동 바는 항상 지금 view.yourActions에서만 나온다 — 하드코딩된 목록이
        * 아니다. ACTION_LABELS는 세 엔진이 실제로 쓰는 액션 이름을 미리 채운 한국어 사전이고,
@@ -78,6 +82,17 @@ function GameScreen({
       <ActionBar actions={view.yourActions} labels={ACTION_LABELS} />
     </Box>
   );
+}
+
+function TurnTimer({ deadline }: { deadline: number }): React.JSX.Element {
+  const [remaining, setRemaining] = useState(() => Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+  useEffect(() => {
+    const update = (): void => setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    update();
+    const timer = setInterval(update, 250);
+    return () => clearInterval(timer);
+  }, [deadline]);
+  return <Text color={remaining <= 15 ? 'red' : undefined}>⏱ 자동 처리까지 {remaining}초</Text>;
 }
 
 /**
@@ -202,27 +217,25 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
   }, [refreshRooms]);
 
   const handleCreateRoom = useCallback(
-    (game: GameId): void => {
+    (game: GameId, mafiaSettings?: MafiaSettings): void => {
       setMenuError(undefined);
       void (async (): Promise<void> => {
-        const room = new Room({ name: `${nickname}의 방`, game, host: nickname });
+        const room = new Room({ name: `${nickname}의 방`, game, host: nickname, mafiaSettings });
         try {
           const server = await startServer(room);
           serverRef.current = server;
-          const ip = firstNonInternalIPv4();
-          setHostAddr(ip !== undefined ? `${ip}:${server.port}` : `?:${server.port}`);
-          // 중요사항 1: room.info()의 addr는 항상 ''다(Room은 자기 IP를 모른다) — 여기서
-          // server.port와 우리가 방금 구한 ip를 합쳐 "ip:port" 형태로 광고해야, UDP 응답기가
-          // 채워 넣는 폭(discovery.ts의 resolveRespondAddr)이나 클라이언트의 DEFAULT_TCP_PORT
-          // 하드코딩에 기대지 않고도 참가자가 실제로 서버가 열린 포트로 접속할 수 있다.
-          // ip를 못 구했으면(비내부 IPv4 인터페이스가 전혀 없는 극단적인 경우) addr를 그대로
-          // 비워, discovery.ts의 자체 폴백(응답기가 자신의 인터페이스 주소로 채움)이 예전처럼
-          // 동작하게 둔다 — 그 폴백은 포트를 모르므로 이 경우엔 여전히 DEFAULT_TCP_PORT 추정에
-          // 의존하게 되지만, 애초에 IP조차 못 구하는 상황 자체가 이 게임의 정상 사용 범위 밖이다.
-          const discovery = await startDiscovery(() => ({
-            ...room.info(),
-            addr: ip !== undefined ? `${ip}:${server.port}` : '',
-          }));
+          const addresses = localIPv4Addresses();
+          setHostAddr(
+            addresses.length > 0 ? addresses.map((address) => `${address}:${server.port}`).join(', ') : `?:${server.port}`,
+          );
+          // 방마다 하나의 주소를 고정 광고하면 WSL/VPN 같은 가상 어댑터 주소가 실제 LAN 주소보다
+          // 먼저 선택될 수 있다. UDP 요청을 보낸 참가자의 IP와 같은 서브넷 주소를 응답마다 골라
+          // TCP 포트까지 함께 광고한다. 따라서 서로 다른 네트워크 대역의 참가자도 자기 대역에서
+          // 도달 가능한 주소를 받는다.
+          const discovery = await startDiscovery((remoteAddress) => {
+            const address = resolveRespondAddr(remoteAddress);
+            return { ...room.info(), addr: address.length > 0 ? `${address}:${server.port}` : '' };
+          });
           discoveryRef.current = discovery;
           await connectAndWire('127.0.0.1', server.port, nickname);
         } catch (err) {
@@ -359,7 +372,9 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
               players={roomState.room.players}
               you={you}
               hostAddr={you === roomState.room.host ? hostAddr : undefined}
+              game={roomState.room.game}
               onStart={handleStart}
+              onLeave={returnToMenu}
             />
           )}
 
@@ -370,12 +385,14 @@ export function App({ initialTheme }: AppProps): React.JSX.Element {
               send={sendAction}
               theme={initialTheme}
               game={roomState.room.game}
+              deadline={roomState.deadline}
             />
           )}
 
           {screen === 'result' && roomState.result && (
             <Result
               ranking={roomState.result.ranking}
+              game={roomState.room.game}
               youAreHost={you === roomState.room.host}
               onReplay={handleReplay}
               onToLobby={handleToLobby}

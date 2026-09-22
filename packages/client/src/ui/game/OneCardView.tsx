@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Card, Suit } from '@soft-puzzle/core';
 import { canPlay, rankOf } from '@soft-puzzle/core';
-import { renderCard, renderHand } from '../../art/cards.js';
+import { renderCard } from '../../art/cards.js';
 import type { GameViewProps } from './types.js';
 
 /** cards.ts의 카드 아트 상수(테두리 사이 5칸 + 좌우 테두리 2칸)를 그대로 따른다 — 겹친 손패에서
@@ -190,20 +190,10 @@ export function OneCardView({ view, you, send, theme }: GameViewProps): React.JS
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
-        {v.others.map((o) => (
-          <Box key={o.nickname} flexDirection="column" marginBottom={1}>
-            <Text>
-              {o.isTurn ? (theme.unicode ? '◀ ' : '< ') : '  '}
-              {o.nickname} - {o.handCount}장
-            </Text>
-            {/* 서버는 상대 카드 내용을 절대 보내지 않는다 — 실제 손패 배열이 아니라
-             * handCount만큼의 'back'을 그려 "장수만 안다"를 시각적으로도 지킨다. */}
-            {o.handCount > 0 &&
-              renderHand(Array(o.handCount).fill('back' as const), theme).map((line, i) => (
-                <Text key={i}>{line}</Text>
-              ))}
-          </Box>
-        ))}
+        <Text bold>상대 손패</Text>
+        <Text>
+          {v.others.map((o) => `${o.isTurn ? (theme.unicode ? '▶' : '>') : theme.unicode ? '·' : '-'} ${o.nickname} ${o.handCount}장`).join('  ')}
+        </Text>
       </Box>
 
       <Box flexDirection="column">

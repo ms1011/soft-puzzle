@@ -86,8 +86,8 @@ describe('config', () => {
   });
 
   it('읽기 권한이 없는 파일이면 {}를 돌려준다', () => {
-    if (typeof process.getuid === 'function' && process.getuid() === 0) {
-      return; // root는 파일 권한을 무시하므로 이 환경에서는 검증 불가
+    if (process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0)) {
+      return; // Windows ACL과 root는 chmod(000)만으로 읽기를 막지 않아 이 검증을 할 수 없다.
     }
     fs.mkdirSync(path.dirname(configPath()), { recursive: true });
     fs.writeFileSync(configPath(), JSON.stringify({ nickname: '안읽힘' }));

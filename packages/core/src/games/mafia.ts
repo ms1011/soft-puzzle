@@ -3,34 +3,62 @@ import type { GameId, GameView } from '../protocol.js';
 import type { Rng } from '../rng.js';
 import { shuffle } from '../rng.js';
 
-type Role = 'mafia' | 'citizen';
+export type MafiaSpecialRole = 'doctor' | 'police' | 'detective';
+type Role = 'mafia' | 'citizen' | MafiaSpecialRole;
 type Phase = 'night' | 'day';
 
-/**
- * 간결한 마피아 엔진. 밤에는 살아 있는 마피아가 같은 목표를 고르고, 낮에는 살아 있는
- * 전원이 투표한다. 가장 많은 표를 받은 사람이 탈락하며 동률이면 아무도 탈락하지 않는다.
- * 역할은 getViewFor에서 본인에게만 전송한다.
- */
+export interface MafiaSettings {
+  mafiaCount: number;
+  specialRoles: MafiaSpecialRole[];
+}
+
+const ROLE_LABELS: Record<Role, string> = {
+  mafia: '마피아', citizen: '시민', doctor: '의사', police: '경찰', detective: '탐정',
+};
+
+/** 마피아는 한 명 이상이며 전체 인원의 절반보다 적어야 한다. */
+export function isValidMafiaCount(playerCount: number, mafiaCount: number): boolean {
+  return Number.isInteger(mafiaCount) && mafiaCount >= 1 && mafiaCount < playerCount / 2;
+}
+
+/** 밤에는 마피아·선택된 특수직업이 행동하고, 낮에는 생존자 전원이 투표한다. */
 export class MafiaEngine implements GameEngine {
   readonly game: GameId = 'mafia';
   readonly minPlayers = 4;
-
   private players: string[] = [];
   private roles = new Map<string, Role>();
   private alive = new Set<string>();
   private phase: Phase = 'night';
-  private votes = new Map<string, string>();
+  private actions = new Map<string, string>();
+  private investigationResults = new Map<string, string>();
   private finished = false;
-  private winner: Role | null = null;
+  private winner: 'mafia' | 'citizen' | null = null;
+
+  constructor(private readonly settings?: MafiaSettings) {}
 
   start(players: string[], _host: string, rng: Rng): void {
     this.players = [...players];
     this.alive = new Set(players);
     this.roles = new Map(players.map((p) => [p, 'citizen']));
-    const mafiaCount = Math.max(1, Math.floor(players.length / 3));
-    for (const p of shuffle([...players], rng).slice(0, mafiaCount)) this.roles.set(p, 'mafia');
+    const mafiaCount = this.settings?.mafiaCount ?? Math.max(1, Math.floor(players.length / 3));
+    const shuffledPlayers = shuffle([...players], rng);
+    const mafia = shuffledPlayers.slice(0, mafiaCount);
+    for (const player of mafia) this.roles.set(player, 'mafia');
+
+    const enabledRoles = [...new Set(this.settings?.specialRoles ?? [])];
+    // 시민도 하나의 역할로 반드시 배정될 수 있어야 한다. 따라서 마피아를 제외한 자리를
+    // 특수직업으로 모두 채우지 않고 최소 한 자리는 시민에게 남긴다. 특수직업은 종류별 1명뿐이다.
+    const specialSlots = Math.max(0, players.length - mafia.length - 1);
+    const specialRoles = shuffle(enabledRoles, rng).slice(0, specialSlots);
+    const specialPlayers = shuffle(shuffledPlayers.slice(mafia.length), rng);
+    specialRoles.forEach((role, index) => {
+      const player = specialPlayers[index];
+      if (player !== undefined) this.roles.set(player, role);
+    });
+
     this.phase = 'night';
-    this.votes = new Map();
+    this.actions = new Map();
+    this.investigationResults = new Map();
     this.finished = false;
     this.winner = null;
   }
@@ -38,41 +66,89 @@ export class MafiaEngine implements GameEngine {
   setHost(_host: string): void {}
 
   handleAction(player: string, action: EngineAction): EngineEvent[] {
-    if (this.finished || action.name !== 'vote' || !this.canVote(player)) return [];
-    if (typeof action.arg !== 'string' || !this.alive.has(action.arg) || action.arg === player) return [];
-    this.votes.set(player, action.arg);
-    const events: EngineEvent[] = [{ text: `${player}님이 투표했습니다.` }];
-    if (this.pendingPlayers().length === 0) events.push(...this.resolveVotes());
+    const expected = this.roleAction(player);
+    if (this.finished || expected === null || this.actions.has(player)) return [];
+    if (action.name !== expected || typeof action.arg !== 'string' || !this.alive.has(action.arg)) return [];
+    if (action.arg === player && expected !== 'protect') return [];
+    this.actions.set(player, action.arg);
+    if (this.pendingPlayers().length > 0) return [{ text: `${player}님이 행동을 완료했습니다.` }];
+    return this.phase === 'night' ? this.resolveNight() : this.resolveDay();
+  }
+
+  private roleAction(player: string): string | null {
+    if (!this.alive.has(player)) return null;
+    if (this.phase === 'day') return 'vote';
+    switch (this.roles.get(player)) {
+      case 'mafia': return 'mafiaVote';
+      case 'doctor': return 'protect';
+      case 'police': return 'investigateMafia';
+      case 'detective': return 'investigateRole';
+      default: return null;
+    }
+  }
+
+  private resolveNight(): EngineEvent[] {
+    const events: EngineEvent[] = [];
+    const protectedPlayer = this.targetForAction('protect');
+    const police = this.playerForAction('investigateMafia');
+    const detective = this.playerForAction('investigateRole');
+    if (police) {
+      const target = this.actions.get(police)!;
+      this.investigationResults.set(police, `${target}님은 ${this.roles.get(target) === 'mafia' ? '마피아입니다.' : '마피아가 아닙니다.'}`);
+    }
+    if (detective) {
+      const target = this.actions.get(detective)!;
+      this.investigationResults.set(detective, `${target}님의 직업은 ${ROLE_LABELS[this.roles.get(target)!]}입니다.`);
+    }
+    const target = this.majorityTarget('mafiaVote');
+    if (target === null) events.push({ text: '마피아의 목표가 동률이라 아무도 탈락하지 않았습니다.' });
+    else if (target === protectedPlayer) events.push({ text: '누군가의 밤 공격이 막혔습니다.' });
+    else this.eliminate(target, '밤사이', events);
+    if (this.checkFinished(events)) return events;
+    this.phase = 'day';
+    this.actions = new Map();
+    events.push({ text: '낮이 되었습니다. 생존자 모두 투표하세요.' });
     return events;
   }
 
-  private canVote(player: string): boolean {
-    if (!this.alive.has(player) || this.votes.has(player)) return false;
-    return this.phase === 'day' || this.roles.get(player) === 'mafia';
+  private resolveDay(): EngineEvent[] {
+    const events: EngineEvent[] = [];
+    const target = this.majorityTarget('vote');
+    if (target === null) events.push({ text: '투표가 동률이라 아무도 탈락하지 않았습니다.' });
+    else this.eliminate(target, '투표로', events);
+    if (this.checkFinished(events)) return events;
+    this.phase = 'night';
+    this.actions = new Map();
+    events.push({ text: '밤이 되었습니다. 마피아와 특수직업자는 행동할 대상을 고르세요.' });
+    return events;
   }
 
-  private resolveVotes(): EngineEvent[] {
+  private playerForAction(action: string): string | undefined {
+    return [...this.actions.keys()].find((player) => this.roleAction(player) === action);
+  }
+
+  private targetForAction(action: string): string | undefined {
+    const player = this.playerForAction(action);
+    return player === undefined ? undefined : this.actions.get(player);
+  }
+
+  private majorityTarget(action: string): string | null {
     const totals = new Map<string, number>();
-    for (const target of this.votes.values()) totals.set(target, (totals.get(target) ?? 0) + 1);
+    for (const [player, target] of this.actions) {
+      if (this.roleAction(player) === action) totals.set(target, (totals.get(target) ?? 0) + 1);
+    }
     let max = 0;
     let targets: string[] = [];
     for (const [target, count] of totals) {
       if (count > max) { max = count; targets = [target]; }
       else if (count === max) targets.push(target);
     }
-    const events: EngineEvent[] = [];
-    if (targets.length === 1 && targets[0] !== undefined) {
-      const target = targets[0];
-      this.alive.delete(target);
-      events.push({ text: `${target}님이 ${this.phase === 'night' ? '밤사이' : '투표로'} 탈락했습니다. 역할: ${this.roles.get(target) === 'mafia' ? '마피아' : '시민'}` });
-    } else {
-      events.push({ text: `${this.phase === 'night' ? '마피아의 목표' : '투표'}가 동률이라 아무도 탈락하지 않았습니다.` });
-    }
-    if (this.checkFinished(events)) return events;
-    this.phase = this.phase === 'night' ? 'day' : 'night';
-    this.votes = new Map();
-    events.push({ text: this.phase === 'night' ? '밤이 되었습니다. 마피아는 처치할 대상을 고르세요.' : '낮이 되었습니다. 생존자 모두 투표하세요.' });
-    return events;
+    return targets.length === 1 ? targets[0]! : null;
+  }
+
+  private eliminate(target: string, reason: string, events: EngineEvent[]): void {
+    this.alive.delete(target);
+    events.push({ text: `${target}님이 ${reason} 탈락했습니다. 역할: ${ROLE_LABELS[this.roles.get(target)!]}` });
   }
 
   private checkFinished(events: EngineEvent[]): boolean {
@@ -88,28 +164,33 @@ export class MafiaEngine implements GameEngine {
 
   getViewFor(player: string): GameView {
     const role = this.roles.get(player) ?? 'citizen';
+    const action = this.roleAction(player);
     return {
       phase: this.finished ? 'result' : this.phase,
-      yourActions: this.canVote(player) ? ['vote'] : [],
+      yourActions: action === null || this.actions.has(player) ? [] : [action],
       yourRole: role,
       phaseLabel: this.phase === 'night' ? '밤' : '낮',
       alive: this.players.map((nickname) => ({ nickname, alive: this.alive.has(nickname), role: this.alive.has(nickname) ? undefined : this.roles.get(nickname) })),
-      hasVoted: this.votes.has(player),
+      hasActed: this.actions.has(player),
+      investigationResult: this.investigationResults.get(player),
     };
   }
 
-  pendingPlayers(): string[] { return this.finished ? [] : this.players.filter((p) => this.canVote(p)); }
+  pendingPlayers(): string[] {
+    return this.finished ? [] : this.players.filter((p) => this.roleAction(p) !== null && !this.actions.has(p));
+  }
 
   defaultAction(player: string): EngineAction | null {
+    const action = this.roleAction(player);
     const target = this.players.find((p) => p !== player && this.alive.has(p));
-    return this.canVote(player) && target ? { name: 'vote', arg: target } : null;
+    return action !== null && target ? { name: action, arg: target } : null;
   }
 
   removePlayer(player: string): EngineEvent[] {
     if (!this.alive.delete(player)) return [];
     const events = [{ text: `${player}님이 게임을 떠나 탈락 처리되었습니다.` }];
-    if (!this.checkFinished(events)) {
-      if (this.pendingPlayers().length === 0) events.push(...this.resolveVotes());
+    if (!this.checkFinished(events) && this.pendingPlayers().length === 0) {
+      events.push(...(this.phase === 'night' ? this.resolveNight() : this.resolveDay()));
     }
     return events;
   }
@@ -118,6 +199,6 @@ export class MafiaEngine implements GameEngine {
 
   result(): { ranking: { nickname: string; detail: string }[] } | null {
     if (!this.finished || this.winner === null) return null;
-    return { ranking: this.players.map((nickname) => ({ nickname, detail: `${this.roles.get(nickname) === 'mafia' ? '마피아' : '시민'}${this.roles.get(nickname) === this.winner ? ' · 승리' : ''}` })) };
+    return { ranking: this.players.map((nickname) => ({ nickname, detail: `${ROLE_LABELS[this.roles.get(nickname)!]}${this.roles.get(nickname) === this.winner ? ' · 승리' : ''}` })) };
   }
 }

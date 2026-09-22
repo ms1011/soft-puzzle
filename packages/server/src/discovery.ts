@@ -28,19 +28,17 @@ const MAX_PROBE_BYTES = 256;
  * 위험하다), 그 값에 절대 도달하지 않도록 증가 전에 clamp한다.
  */
 export function startDiscovery(
-  getInfo: () => RoomInfo,
+  getInfo: (remoteAddress: string) => RoomInfo,
   preferredPort: number = DEFAULT_UDP_PORT,
 ): Promise<RunningDiscovery> {
   return new Promise((resolve, reject) => {
-    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-
-    const onMessage = (msg: Buffer, rinfo: dgram.RemoteInfo): void => {
+    const onMessage = (socket: dgram.Socket, msg: Buffer, rinfo: dgram.RemoteInfo): void => {
       // 네트워크에서 온 것은 아무것도 신뢰하지 않는다 — 크기부터 제한하고, 절대 JSON으로
       // 파싱하지 않으며, 정확히 프로브 문자열일 때만 반응한다. 그 외에는 조용히 무시한다.
       if (msg.length === 0 || msg.length > MAX_PROBE_BYTES) return;
       if (msg.toString('utf8') !== DISCOVERY_PROBE) return;
 
-      const info = getInfo();
+      const info = getInfo(rinfo.address);
       const addr = info.addr.length > 0 ? info.addr : resolveRespondAddr(rinfo.address);
       const payload = JSON.stringify({ ...info, addr } satisfies RoomInfo);
       socket.send(payload, rinfo.port, rinfo.address, () => {
@@ -51,22 +49,28 @@ export function startDiscovery(
     let attempt = 0;
     let port = preferredPort;
 
-    const onBindError = (err: NodeJS.ErrnoException): void => {
-      if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_RETRIES && port < 65535) {
-        attempt++;
-        port++;
-        socket.removeListener('error', onBindError);
-        tryBind();
-        return;
-      }
-      reject(err);
-    };
-
     const tryBind = (): void => {
+      // Windows에서는 bind 실패를 낸 UDP 소켓을 다른 포트에 다시 bind하면 EACCES가 발생할 수
+      // 있다. 재시도마다 새 소켓을 만들어 플랫폼에 관계없이 동일하게 동작하게 한다.
+      const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      const onBindError = (err: NodeJS.ErrnoException): void => {
+        socket.removeListener('error', onBindError);
+        try { socket.close(); } catch { /* bind 전 소켓은 이미 닫힌 상태일 수 있다. */ }
+        // Windows UDP는 다른 소켓이 선점한 포트나 막 닫힌 포트에 EADDRINUSE 대신 EACCES를
+        // 돌려주기도 한다. 둘 다 이 응답기의 관점에서는 "다음 포트를 시도"할 조건이다.
+        if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && attempt < MAX_PORT_RETRIES && port < 65535) {
+          attempt++;
+          port++;
+          tryBind();
+          return;
+        }
+        reject(err);
+      };
       socket.once('error', onBindError);
       socket.bind(port, () => {
         socket.removeListener('error', onBindError);
-        socket.on('message', onMessage);
+        const messageHandler = (msg: Buffer, rinfo: dgram.RemoteInfo): void => onMessage(socket, msg, rinfo);
+        socket.on('message', messageHandler);
         // 응답기는 항상 발신자에게 유니캐스트로 답할 뿐 브로드캐스트를 보내지 않지만, 일부
         // 플랫폼에서 바인딩 전 setBroadcast 호출이 거부되는 것과 같은 제약이 있어 브리프의
         // 지시대로 바인딩 이후에 호출해둔다(응답기 동작에는 영향 없음 — 방어적으로만 켜둔다).
@@ -82,7 +86,7 @@ export function startDiscovery(
           close(): void {
             if (closed) return;
             closed = true;
-            socket.removeListener('message', onMessage);
+            socket.removeListener('message', messageHandler);
             socket.close();
           },
         });
@@ -103,7 +107,7 @@ function isLoopback(addr: string): boolean {
  * 경우 127.0.0.1을 광고하면 같은 기기가 아닌 어떤 클라이언트에서도 연결할 수 없다(Task 8이
  * 겪었던 것과 같은 부류의 실패, "127.0.0.1로 방을 광고하면 아무도 못 들어온다").
  */
-function resolveRespondAddr(remoteAddress: string): string {
+export function resolveRespondAddr(remoteAddress: string): string {
   if (isLoopback(remoteAddress)) return '127.0.0.1';
 
   const ifaces = os.networkInterfaces();

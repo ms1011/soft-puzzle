@@ -23,4 +23,8 @@ export type { YachtCategory } from './games/yacht.js';
 export { scoreCategory, YachtEngine } from './games/yacht.js';
 
 export { canPlay, OneCardEngine } from './games/onecard.js';
-export { MafiaEngine } from './games/mafia.js';
+export type { MafiaSettings, MafiaSpecialRole } from './games/mafia.js';
+export { isValidMafiaCount, MafiaEngine } from './games/mafia.js';
+export { DavinciEngine } from './games/davinci.js';
+export { LiarEngine } from './games/liar.js';
+export { IndianPokerEngine } from './games/indianPoker.js';

@@ -5,4 +5,4 @@ export type { RunningServer } from './server.js';
 export { startServer } from './server.js';
 
 export type { RunningDiscovery } from './discovery.js';
-export { startDiscovery } from './discovery.js';
+export { resolveRespondAddr, startDiscovery } from './discovery.js';

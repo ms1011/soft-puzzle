@@ -1,4 +1,4 @@
-export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia';
+export type GameId = 'blackjack' | 'onecard' | 'yacht' | 'mafia' | 'davinci' | 'liar' | 'indianPoker';
 
 export type ClientMsg =
   | { type: 'join'; nickname: string }
@@ -22,6 +22,8 @@ export type ServerMsg =
       type: 'state';
       phase: 'lobby' | 'playing' | 'result';
       room: { name: string; game: GameId; host: string; players: string[] };
+      /** playing일 때 현재 입력 단계가 자동 처리되는 절대 시각(ms). */
+      deadline?: number;
       view?: GameView;
       result?: { ranking: { nickname: string; detail: string }[] };
     }

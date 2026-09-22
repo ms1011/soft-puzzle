@@ -6,8 +6,12 @@ import {
   YachtEngine,
   OneCardEngine,
   MafiaEngine,
+  isValidMafiaCount,
+  DavinciEngine,
+  LiarEngine,
+  IndianPokerEngine,
 } from '@soft-puzzle/core';
-import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent } from '@soft-puzzle/core';
+import type { Rng, GameId, ClientMsg, ServerMsg, RoomInfo, GameEngine, EngineEvent, MafiaSettings } from '@soft-puzzle/core';
 
 export interface RoomOpts {
   name: string;
@@ -17,16 +21,20 @@ export interface RoomOpts {
   rng?: Rng;
   /** 기본 Date.now — 테스트에서 fake clock 주입 */
   now?: () => number;
+  /** 마피아 방에서만 쓰는 역할·마피아 인원 설정. */
+  mafiaSettings?: MafiaSettings;
 }
 
 export type Phase = 'lobby' | 'playing' | 'result';
 
 /** Room이 아는 유일한 game-id 분기점 — 새 엔진 인스턴스를 만드는 것 말고는 게임을 몰라야 한다. */
-const ENGINE_FACTORIES: Record<GameId, () => GameEngine> = {
+const ENGINE_FACTORIES: Record<Exclude<GameId, 'mafia'>, () => GameEngine> = {
   blackjack: () => new BlackjackEngine(),
   onecard: () => new OneCardEngine(),
   yacht: () => new YachtEngine(),
-  mafia: () => new MafiaEngine(),
+  davinci: () => new DavinciEngine(),
+  liar: () => new LiarEngine(),
+  indianPoker: () => new IndianPokerEngine(),
 };
 
 const MAX_NICKNAME_LENGTH = 32;
@@ -47,6 +55,7 @@ export class Room {
   private host: string | null;
   private readonly rng: Rng;
   private readonly now: () => number;
+  private readonly mafiaSettings: MafiaSettings | undefined;
 
   private players: string[] = [];
   private phase: Phase = 'lobby';
@@ -60,6 +69,7 @@ export class Room {
     this.host = opts.host;
     this.rng = opts.rng ?? mulberry32(Date.now());
     this.now = opts.now ?? Date.now;
+    this.mafiaSettings = opts.mafiaSettings;
   }
 
   onSend(cb: (nickname: string, msg: ServerMsg) => void): void {
@@ -205,6 +215,11 @@ export class Room {
     };
   }
 
+  private createEngine(): GameEngine {
+    if (this.game === 'mafia') return new MafiaEngine(this.mafiaSettings);
+    return ENGINE_FACTORIES[this.game]();
+  }
+
   // ---- action 처리 ----
 
   private handleAction(nickname: string, name: string, arg: unknown): void {
@@ -228,12 +243,16 @@ export class Room {
       this.send(nickname, { type: 'event', text: '방장만 게임을 시작할 수 있습니다.' });
       return;
     }
-    const engine = ENGINE_FACTORIES[this.game]();
+    const engine = this.createEngine();
     if (this.players.length < engine.minPlayers) {
       this.send(nickname, {
         type: 'event',
         text: `최소 ${engine.minPlayers}명이 있어야 시작할 수 있습니다.`,
       });
+      return;
+    }
+    if (this.game === 'mafia' && !isValidMafiaCount(this.players.length, this.mafiaSettings?.mafiaCount ?? Math.max(1, Math.floor(this.players.length / 3)))) {
+      this.send(nickname, { type: 'event', text: `마피아는 현재 ${this.players.length}명의 절반 미만이어야 합니다.` });
       return;
     }
     this.engine = engine;
@@ -268,7 +287,7 @@ export class Room {
       this.send(nickname, { type: 'event', text: '방장만 다시 시작할 수 있습니다.' });
       return;
     }
-    const engine = ENGINE_FACTORIES[this.game]();
+    const engine = this.createEngine();
     // tryStart와 동일한 guard(중요사항 4) — 없으면 게임 도중 이탈로 인원이 minPlayers 밑으로
     // 줄어든 채 result에 도착한 방에서, host의 반사적인 replay가 엔진의 명시된 계약(예:
     // 블랙잭 minPlayers=2)을 어기는 솔로 게임을 조용히 새로 시작해버린다.
@@ -277,6 +296,10 @@ export class Room {
         type: 'event',
         text: `최소 ${engine.minPlayers}명이 있어야 시작할 수 있습니다.`,
       });
+      return;
+    }
+    if (this.game === 'mafia' && !isValidMafiaCount(this.players.length, this.mafiaSettings?.mafiaCount ?? Math.max(1, Math.floor(this.players.length / 3)))) {
+      this.send(nickname, { type: 'event', text: `마피아는 현재 ${this.players.length}명의 절반 미만이어야 합니다.` });
       return;
     }
     this.engine = engine;
@@ -333,6 +356,6 @@ export class Room {
     if (this.phase === 'result') {
       return { type: 'state', phase: 'result', room, view, result: this.engine.result() ?? undefined };
     }
-    return { type: 'state', phase: 'playing', room, view };
+    return { type: 'state', phase: 'playing', room, view, deadline: this.deadline ?? undefined };
   }
 }

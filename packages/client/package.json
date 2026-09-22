@@ -1,7 +1,7 @@
 {
   "name": "soft-puzzle",
-  "version": "0.1.0",
-  "description": "터미널에서 즐기는 LAN 파티 게임(블랙잭·원카드·야추·마피아)",
+  "version": "0.4.0",
+  "description": "터미널에서 즐기는 LAN 파티 게임 7종",
   "type": "module",
   "license": "MIT",
   "author": "ms1011",

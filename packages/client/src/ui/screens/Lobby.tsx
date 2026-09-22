@@ -1,5 +1,7 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
+import type { GameId } from '@soft-puzzle/core';
+import { GAME_INFO } from '../gameLabels.js';
 
 export interface LobbyProps {
   host: string;
@@ -9,7 +11,9 @@ export interface LobbyProps {
   you: string;
   /** 내가 호스트일 때만 App이 채워 넘긴다 — os.networkInterfaces()에서 뽑은 비내부 IPv4:포트. */
   hostAddr?: string;
+  game?: GameId;
   onStart: () => void;
+  onLeave: () => void;
 }
 
 /**
@@ -19,11 +23,12 @@ export interface LobbyProps {
  * 방 이름·게임 타이틀은 여기서 그리지 않는다 — App의 공통 레이아웃(상단 테두리 바)이 이미
  * 그린다. 리뷰에서 지적된 이중 렌더(같은 문자열이 테두리 바 안과 밖에 두 번 나오는) 회귀다.
  */
-export function Lobby({ host, players, you, hostAddr, onStart }: LobbyProps): React.JSX.Element {
+export function Lobby({ host, players, you, hostAddr, game, onStart, onLeave }: LobbyProps): React.JSX.Element {
   const youAreHost = you === host;
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (youAreHost && key.return) onStart();
+    if (input === 'q' || key.escape) onLeave();
   });
 
   return (
@@ -39,10 +44,15 @@ export function Lobby({ host, players, you, hostAddr, onStart }: LobbyProps): Re
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>방장이 나가면 방이 사라집니다</Text>
+        <Text dimColor>
+          {game !== undefined && players.length < GAME_INFO[game].minPlayers
+            ? `시작하려면 ${GAME_INFO[game].minPlayers - players.length}명이 더 필요합니다 · `
+            : ''}
+          방장이 나가면 방이 사라집니다
+        </Text>
       </Box>
-      {youAreHost && <Text>[Enter] 시작</Text>}
-      {!youAreHost && <Text dimColor>방장이 시작하기를 기다리는 중입니다...</Text>}
+      {youAreHost && <Text>[Enter] 시작 · [q] 방 닫기</Text>}
+      {!youAreHost && <Text dimColor>방장이 시작하기를 기다리는 중입니다... [q] 나가기</Text>}
     </Box>
   );
 }
